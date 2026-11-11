@@ -25,10 +25,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setUnauthorizedDomain(null);
     setLoading(true);
 
     try {
@@ -55,6 +57,7 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     setErrorMessage(null);
+    setUnauthorizedDomain(null);
     setLoading(true);
     try {
       await signInWithGoogle();
@@ -63,7 +66,13 @@ export default function LoginPage() {
     } catch (err: unknown) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const code = (err as any)?.code;
-      if (code !== 'auth/popup-closed-by-user') {
+      if (code === 'auth/unauthorized-domain') {
+        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        setUnauthorizedDomain(hostname);
+        setErrorMessage(
+          `Google Sign-In is blocked because "${hostname}" has not been added to your Firebase Authorized Domains.`
+        );
+      } else if (code !== 'auth/popup-closed-by-user') {
         const msg = err instanceof Error ? err.message : 'Google sign-in error';
         setErrorMessage(msg);
         error('Google Sign-in Error', msg);
@@ -117,9 +126,42 @@ export default function LoginPage() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4 sm:px-0">
         <div className="p-8 rounded-3xl bg-midnight-900/80 border border-studio-border/70 backdrop-blur-xl shadow-2xl space-y-6">
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
+            <div className="p-4 rounded-2xl bg-rose-950/70 border border-rose-500/30 text-rose-200 text-xs space-y-2.5">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span className="font-semibold">{errorMessage}</span>
+              </div>
+
+              {unauthorizedDomain && (
+                <div className="pt-2 border-t border-rose-500/20 text-[11px] text-slate-300 space-y-2">
+                  <p className="font-medium text-cyan-300">
+                    🛠️ How to fix in 30 seconds:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-300 leading-relaxed">
+                    <li>
+                      Open your{' '}
+                      <a
+                        href="https://console.firebase.google.com/project/sonicforge-ai/authentication/settings"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-cyan-400 underline hover:text-cyan-300 font-semibold"
+                      >
+                        Firebase Console &rarr; Auth Settings
+                      </a>
+                    </li>
+                    <li>
+                      Scroll down to <strong>Authorized domains</strong> and click{' '}
+                      <strong>Add domain</strong>
+                    </li>
+                    <li>
+                      Add <code className="bg-slate-900 px-1 py-0.5 rounded text-cyan-300">{unauthorizedDomain}</code> (and <code className="bg-slate-900 px-1 py-0.5 rounded text-cyan-300">localhost</code>)
+                    </li>
+                  </ol>
+                  <div className="p-2.5 rounded-xl bg-midnight-950/80 border border-studio-blue/30 text-slate-200">
+                    💡 <strong>Instant Alternative:</strong> Sign in with your <strong>Email &amp; Password</strong> below right now! Email sign-in requires no domain authorization.
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -222,6 +264,15 @@ export default function LoginPage() {
                 </>
               )}
             </button>
+
+            <div className="text-center pt-2">
+              <Link
+                href="/dashboard"
+                className="text-xs text-slate-400 hover:text-cyan-300 font-medium transition-colors"
+              >
+                Skip sign-in &amp; explore studio as Guest &rarr;
+              </Link>
+            </div>
           </form>
         </div>
       </div>
