@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAudioFile() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+
+    // Audio files: max 25MB, must be audio format, scoped by user ID
+    match /users/{userId}/audio/{fileName} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId)
+                    && isAudioFile()
+                    && request.resource.size < 25 * 1024 * 1024;
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
