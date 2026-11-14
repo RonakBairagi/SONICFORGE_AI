@@ -72,8 +72,15 @@ export default function DashboardPage() {
 
             <div className="flex flex-wrap items-center gap-3 mt-6">
               <Link
+                href="/custom-song"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-studio-violet to-purple-600 text-white text-xs font-bold shadow-lg shadow-purple-500/20 hover:opacity-95 transition-all flex items-center gap-2"
+              >
+                <Mic2 className="w-4 h-4 text-purple-200" />
+                <span>Create Custom Song &amp; Lyrics</span>
+              </Link>
+              <Link
                 href="/studio"
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-studio-blue to-studio-violet text-white text-xs font-bold shadow-lg shadow-studio-blue/20 hover:opacity-95 transition-all flex items-center gap-2"
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-studio-blue to-indigo-600 text-white text-xs font-bold shadow-lg shadow-studio-blue/20 hover:opacity-95 transition-all flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4 text-cyan-300" />
                 <span>Launch Music Studio</span>
@@ -90,20 +97,41 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Launch Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           <Link
-            href="/studio"
-            className="p-5 rounded-2xl bg-white/80 dark:bg-midnight-900/70 hover:bg-white dark:hover:bg-midnight-850/90 border border-slate-200/80 dark:border-studio-border/60 hover:border-studio-blue/40 transition-all group flex flex-col justify-between shadow-sm hover:shadow-md"
+            href="/custom-song"
+            className="p-5 rounded-3xl bg-white dark:bg-midnight-900/70 hover:bg-slate-50 dark:hover:bg-midnight-850/90 border border-purple-200 dark:border-purple-900/40 hover:border-studio-violet transition-all group flex flex-col justify-between shadow-sm hover:shadow-md"
           >
             <div>
-              <div className="w-10 h-10 rounded-xl bg-studio-blue/10 border border-studio-blue/20 flex items-center justify-center text-studio-blue dark:text-cyan-400 group-hover:scale-110 transition-transform mb-3">
+              <div className="w-10 h-10 rounded-2xl bg-studio-violet/15 border border-studio-violet/30 flex items-center justify-center text-studio-violet dark:text-purple-400 group-hover:scale-110 transition-transform mb-3">
+                <Mic2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-studio-violet dark:group-hover:text-purple-300">
+                Custom Song
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Write original lyrics, choose vocal styles &amp; languages, and render complete vocal tracks.
+              </p>
+            </div>
+            <div className="mt-4 flex items-center text-xs text-studio-violet dark:text-purple-400 font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+              <span>Write song</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </div>
+          </Link>
+
+          <Link
+            href="/studio"
+            className="p-5 rounded-3xl bg-white dark:bg-midnight-900/70 hover:bg-slate-50 dark:hover:bg-midnight-850/90 border border-slate-200/80 dark:border-studio-border/60 hover:border-studio-blue/40 transition-all group flex flex-col justify-between shadow-sm hover:shadow-md"
+          >
+            <div>
+              <div className="w-10 h-10 rounded-2xl bg-studio-blue/10 border border-studio-blue/20 flex items-center justify-center text-studio-blue dark:text-cyan-400 group-hover:scale-110 transition-transform mb-3">
                 <Music2 className="w-5 h-5" />
               </div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-studio-blue dark:group-hover:text-cyan-300">
                 Music Studio
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Full songs with AI vocals, custom lyrics, orchestral scores, and synthwave beats.
+                Preset templates, instrumental arrangements, orchestral cues, and soundscapes.
               </p>
             </div>
             <div className="mt-4 flex items-center text-xs text-studio-blue dark:text-cyan-400 font-bold gap-1 group-hover:translate-x-0.5 transition-transform">

@@ -18,6 +18,10 @@ import {
   Loader2,
   Check,
   Compass,
+  ArrowRight,
+  Music2,
+  FileText,
+  HelpCircle,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useAuth } from '@/context/AuthContext';
@@ -30,6 +34,15 @@ import {
 } from '@/lib/firestore-service';
 import { AssistantMessage } from '@/types';
 import { generateId } from '@/lib/utils';
+
+const SUGGESTED_QUERIES = [
+  'Help me write lyrics for a sad Hindi song',
+  'How can I make this track more energetic?',
+  'How do I use the custom song feature?',
+  'Create a futuristic sci-fi sound effect',
+  'Explain why my last generation failed',
+  'Summarize the current capabilities of SonicForge',
+];
 
 export default function AssistantPage() {
   const router = useRouter();
@@ -45,13 +58,14 @@ export default function AssistantPage() {
 
   // Speech Recognition (Mic Input)
   const [isListening, setIsListening] = useState(false);
+  const [micTranscript, setMicTranscript] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
   const recognitionRef = useRef<unknown>(null);
 
   // Voice Output (Rime TTS)
   const [voiceSynthesisEnabled, setVoiceSynthesisEnabled] = useState(true);
   const [selectedSpeaker, setSelectedSpeaker] = useState('astra');
-  const [isSpeakingAudio, setIsSpeakingAudio] = useState<string | null>(null); // messageId currently playing
+  const [isSpeakingAudio, setIsSpeakingAudio] = useState<string | null>(null);
   const audioVoiceRef = useRef<HTMLAudioElement | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -67,7 +81,7 @@ export default function AssistantPage() {
           id: generateId('msg'),
           role: 'assistant',
           content:
-            "Hello! I am Sonic Assistant, your AI music copilot. I can help you craft rich prompts for full songs with AI vocals, design sound effects, structure lyrics, and troubleshoot your studio workflow.\n\nTry asking: 'Write a synthpop song with verse and chorus lyrics' or 'How do I generate a cinematic impact?'",
+            "Hello! I am Sonic Assistant, your AI music copilot and DAW audio engineer. I can help you write lyrics in any language, structure custom songs, design ElevenLabs sound effects, and diagnose your studio workflow.\n\nTry clicking any suggestion below or speak with your microphone!",
           timestamp: Date.now(),
         },
       ]);
@@ -99,14 +113,15 @@ export default function AssistantPage() {
           for (let i = 0; i < event.results.length; i++) {
             fullTranscript += event.results[i][0].transcript;
           }
+          setMicTranscript(fullTranscript);
           setInputText(fullTranscript);
         };
 
         recognition.onerror = (e: { error: string }) => {
-          console.warn('Speech recognition error:', e.error);
+          console.warn('Speech recognition notice:', e.error);
           setIsListening(false);
           if (e.error === 'not-allowed') {
-            setMicError('Microphone permission was denied.');
+            setMicError('Microphone permission was denied. Please allow microphone access in your browser.');
           } else {
             setMicError(`Voice recognition: ${e.error}`);
           }
@@ -125,7 +140,7 @@ export default function AssistantPage() {
     if (!recognitionRef.current) {
       warning(
         'Speech Recognition Unavailable',
-        'Your browser does not support Web Speech API. Please type your prompt in the box below.'
+        'Your browser does not support Web Speech API. Please type your query in the text box below.'
       );
       return;
     }
@@ -139,10 +154,11 @@ export default function AssistantPage() {
       setIsListening(false);
     } else {
       try {
+        setMicTranscript('');
         recog.start();
         setIsListening(true);
       } catch (err) {
-        console.warn('Recognition start error:', err);
+        console.warn('Recognition start notice:', err);
         setIsListening(false);
       }
     }
@@ -152,12 +168,15 @@ export default function AssistantPage() {
   const speakWithRime = async (text: string, messageId: string) => {
     try {
       setIsSpeakingAudio(messageId);
-      // Clean markdown tags for natural speech synthesis
+      // Clean markdown tags & extract first 2 sentences for natural speech
       const speechText = text
         .replace(/[*_#`[\]()]/g, '')
         .replace(/\n+/g, ' ')
+        .split(/(?<=[.?!])\s+/)
+        .slice(0, 2)
+        .join(' ')
         .trim()
-        .substring(0, 300);
+        .substring(0, 240);
 
       const res = await fetch('/api/voice/speak', {
         method: 'POST',
@@ -170,8 +189,7 @@ export default function AssistantPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Voice synthesis failed');
+        throw new Error('Voice synthesis service unavailable');
       }
 
       const { audioUrl } = await res.json();
@@ -185,11 +203,11 @@ export default function AssistantPage() {
         await audioVoiceRef.current.play();
       }
     } catch (e: unknown) {
-      console.warn('Rime TTS playback notice:', e);
       setIsSpeakingAudio(null);
-      // Fallback: Browser native SpeechSynthesis if Rime server call fails or is out of quota
+      // Fallback: Browser native SpeechSynthesis
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text.substring(0, 200));
+        const cleanUtterance = text.replace(/[*_#`[\]()]/g, '').substring(0, 160);
+        const utterance = new SpeechSynthesisUtterance(cleanUtterance);
         window.speechSynthesis.speak(utterance);
       }
     }
@@ -216,6 +234,7 @@ export default function AssistantPage() {
     setMessages(updated);
     saveAssistantChatHistory(uid, updated);
     setInputText('');
+    setMicTranscript('');
     setIsSending(true);
 
     try {
@@ -241,7 +260,6 @@ export default function AssistantPage() {
       setMessages(finalMessages);
       saveAssistantChatHistory(uid, finalMessages);
 
-      // Auto trigger voice output if enabled
       if (voiceSynthesisEnabled) {
         speakWithRime(assistantMsg.content, assistantMsg.id);
       }
@@ -260,7 +278,7 @@ export default function AssistantPage() {
         {
           id: generateId('msg'),
           role: 'assistant',
-          content: 'Conversation history cleared. How can I assist with your music today?',
+          content: 'Conversation history reset. What audio project shall we create today?',
           timestamp: Date.now(),
         },
       ]);
@@ -273,11 +291,16 @@ export default function AssistantPage() {
     router.push('/studio');
   };
 
+  const handleSendToCustomSong = (content: string) => {
+    sessionStorage.setItem('sonicforge_temp_lyrics', content);
+    router.push('/custom-song');
+  };
+
   return (
     <AppShell>
       <div className="flex flex-col h-[calc(100vh-10rem)] max-w-4xl mx-auto space-y-4">
         {/* Top Header */}
-        <div className="flex items-center justify-between p-4 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shrink-0 shadow-sm">
+        <div className="flex items-center justify-between p-4 rounded-3xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shrink-0 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-studio-blue via-studio-violet to-cyan-400 p-0.5 shadow-md">
               <div className="w-full h-full bg-slate-900 dark:bg-midnight-950 rounded-[14px] flex items-center justify-center">
@@ -287,12 +310,12 @@ export default function AssistantPage() {
             <div>
               <h1 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span>Sonic Assistant</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-studio-violet/15 border border-studio-violet/30 text-studio-violet dark:text-purple-300 font-semibold">
-                  Rime Voice Enabled
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-studio-violet/15 border border-studio-violet/30 text-studio-violet dark:text-purple-300 font-bold">
+                  AI Music Copilot
                 </span>
               </h1>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Music prompting, lyrics engineering, foley advice &amp; troubleshooting
+                Multi-lingual songwriting, DAW arrangement, and technical troubleshooting
               </p>
             </div>
           </div>
@@ -301,9 +324,9 @@ export default function AssistantPage() {
             {/* Voice toggle */}
             <button
               onClick={() => setVoiceSynthesisEnabled(!voiceSynthesisEnabled)}
-              className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors font-medium ${
+              className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors font-semibold ${
                 voiceSynthesisEnabled
-                  ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30'
+                  ? 'bg-studio-blue/15 text-studio-blue dark:bg-cyan-500/15 dark:text-cyan-300 border border-studio-blue/30 dark:border-cyan-500/30'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
               }`}
               title={voiceSynthesisEnabled ? 'Voice output ON (Rime TTS)' : 'Voice output OFF'}
@@ -327,11 +350,29 @@ export default function AssistantPage() {
           </div>
         </div>
 
+        {/* Suggestion Chips */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs shrink-0 no-scrollbar">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
+            Suggested:
+          </span>
+          {SUGGESTED_QUERIES.map((q, idx) => (
+            <button
+              key={idx}
+              onClick={() => handleSendMessage(q)}
+              className="px-3 py-1.5 rounded-full bg-white dark:bg-midnight-900/80 hover:bg-slate-100 dark:hover:bg-midnight-850 border border-slate-200 dark:border-studio-border text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:text-studio-blue dark:hover:text-cyan-300 shrink-0 shadow-sm transition-all"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+
         {/* Chat Messages Scroll Area */}
         <div className="flex-1 overflow-y-auto space-y-4 p-4 rounded-3xl bg-white/60 dark:bg-midnight-900/50 border border-slate-200 dark:border-studio-border/50 backdrop-blur-md shadow-inner">
           {messages.map((m) => {
             const isUser = m.role === 'user';
             const isSpeakingThis = isSpeakingAudio === m.id;
+            const hasLyrics = m.content.includes('[Verse') || m.content.includes('[Chorus');
+
             return (
               <div
                 key={m.id}
@@ -344,18 +385,32 @@ export default function AssistantPage() {
                 )}
 
                 <div
-                  className={`max-w-[85%] sm:max-w-xl p-4 sm:p-5 rounded-3xl text-xs sm:text-sm leading-relaxed space-y-2.5 ${
+                  className={`max-w-[85%] sm:max-w-xl p-4 sm:p-5 rounded-3xl text-xs sm:text-sm leading-relaxed space-y-3 ${
                     isUser
-                      ? 'bg-gradient-to-r from-studio-blue to-studio-violet text-white rounded-tr-sm shadow-md'
+                      ? 'bg-gradient-to-r from-studio-blue to-studio-violet text-white rounded-tr-sm shadow-md font-medium'
                       : 'bg-white dark:bg-midnight-850/90 border border-slate-200 dark:border-studio-border/80 text-slate-800 dark:text-slate-200 rounded-tl-sm shadow-sm'
                   }`}
                 >
-                  <p className="whitespace-pre-line">{m.content}</p>
+                  <p className="whitespace-pre-line font-sans">{m.content}</p>
+
+                  {/* If assistant returned song lyrics, give one-click send to Custom Song */}
+                  {!isUser && hasLyrics && (
+                    <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                      <button
+                        onClick={() => handleSendToCustomSong(m.content)}
+                        className="px-3 py-1.5 rounded-xl bg-studio-violet text-white text-xs font-bold hover:bg-purple-600 transition-colors flex items-center gap-1.5 shadow-sm"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Send Lyrics to Custom Song Studio</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* If assistant gave a suggested prompt with quick launch */}
                   {m.suggestedPrompt && (
-                    <div className="mt-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-midnight-950/70 border border-cyan-500/30 text-xs space-y-2">
-                      <div className="flex items-center justify-between text-cyan-600 dark:text-cyan-300 font-semibold text-[11px]">
+                    <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-midnight-950/70 border border-cyan-500/30 text-xs space-y-2">
+                      <div className="flex items-center justify-between text-studio-blue dark:text-cyan-300 font-bold text-[11px]">
                         <span className="flex items-center gap-1.5">
                           <Sparkles className="w-3.5 h-3.5" />
                           Recommended Studio Prompt
@@ -366,7 +421,7 @@ export default function AssistantPage() {
                       </p>
                       <button
                         onClick={() => handleLoadPromptToStudio(m.suggestedPrompt!)}
-                        className="w-full py-2 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                        className="w-full py-2 px-3 rounded-xl bg-studio-blue/15 hover:bg-studio-blue/25 text-studio-blue dark:text-cyan-300 border border-studio-blue/30 text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                       >
                         <Sliders className="w-3.5 h-3.5" />
                         <span>Load Prompt into Music Studio</span>
@@ -379,7 +434,7 @@ export default function AssistantPage() {
                       <span>Sonic Copilot</span>
                       <button
                         onClick={() => speakWithRime(m.content, m.id)}
-                        className="text-studio-blue dark:text-cyan-400 hover:underline flex items-center gap-1 transition-colors font-medium"
+                        className="text-studio-blue dark:text-cyan-400 hover:underline flex items-center gap-1 transition-colors font-semibold"
                         title="Replay Voice (Rime Coda)"
                       >
                         {isSpeakingThis ? (
@@ -390,7 +445,7 @@ export default function AssistantPage() {
                         ) : (
                           <>
                             <Volume2 className="w-3 h-3" />
-                            <span>Play Voice</span>
+                            <span>Read Out Loud</span>
                           </>
                         )}
                       </button>
@@ -401,7 +456,7 @@ export default function AssistantPage() {
             );
           })}
           {isSending && (
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pl-11 animate-pulse">
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pl-11 animate-pulse font-medium">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-studio-blue dark:text-cyan-400" />
               <span>Sonic Assistant is composing reply...</span>
             </div>
@@ -410,15 +465,20 @@ export default function AssistantPage() {
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 sm:p-4 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shrink-0 space-y-2 shadow-sm">
+        <div className="p-3 sm:p-4 rounded-3xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shrink-0 space-y-2 shadow-sm">
           {micError && (
-            <p className="text-[11px] text-rose-500 px-2">{micError}</p>
+            <p className="text-[11px] text-rose-500 px-2 font-medium">{micError}</p>
           )}
 
+          {/* Real-time recognized voice transcription preview */}
           {isListening && (
-            <div className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-600 dark:text-cyan-300 text-xs flex items-center gap-2 animate-pulse">
+            <div className="px-3 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 text-xs flex items-center gap-2 animate-pulse">
               <span className="w-2 h-2 rounded-full bg-cyan-500 animate-ping" />
-              <span>Listening to your voice... Speak your musical idea.</span>
+              <span>
+                {micTranscript
+                  ? `Heard: "${micTranscript}"`
+                  : 'Listening to your voice... Speak your question or lyrics idea.'}
+              </span>
             </div>
           )}
 
@@ -447,8 +507,8 @@ export default function AssistantPage() {
               }}
               placeholder={
                 isListening
-                  ? 'Transcribing speech...'
-                  : 'Ask about full vocal songs, lyric structures, instruments, or sound effects...'
+                  ? 'Transcribing your speech...'
+                  : 'Ask about lyrics, song structures, instruments, sound effects, or troubleshooting...'
               }
               className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-midnight-950/80 border border-slate-200 dark:border-studio-border text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-studio-blue focus:ring-1 focus:ring-studio-blue shadow-inner"
             />

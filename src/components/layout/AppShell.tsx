@@ -8,7 +8,7 @@ import { AnimatedBackground } from '../ui/AnimatedBackground';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-midnight-950 dark:bg-midnight-950 light:bg-slate-50 text-slate-100 dark:text-slate-100 light:text-slate-900 flex flex-col md:flex-row antialiased selection:bg-studio-blue/30 selection:text-cyan-200 relative transition-colors duration-200">
+    <div className="min-h-screen bg-slate-50 dark:bg-midnight-950 text-slate-900 dark:text-slate-100 flex flex-col md:flex-row antialiased selection:bg-studio-blue/30 selection:text-cyan-200 relative transition-colors duration-200">
       {/* Background audio waves & particles */}
       <AnimatedBackground />
 

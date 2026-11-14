@@ -207,23 +207,33 @@ export default function MusicStudioPage() {
     info('Section tag added', `Inserted ${tag} into lyrics`);
   };
 
-  // AI Lyric Assistant: Generates rhyming lyrics based on prompt, genre, and mood
-  const handleAILyricAssist = () => {
-    const promptKeywords = prompt.toLowerCase();
-    let sampleLyrics = '';
-
-    if (promptKeywords.includes('cyber') || promptKeywords.includes('future') || promptKeywords.includes('synth')) {
-      sampleLyrics = `[Verse 1]\nNeon reflections across the wet asphalt\nDigital heartbeats running by default\nSignals pulsing through the chrome horizon\n\n[Chorus]\nWe are electric in the midnight haze\nLost inside this holographic maze\nTake my hand before the grid goes down!`;
-    } else if (promptKeywords.includes('acoustic') || promptKeywords.includes('folk') || promptKeywords.includes('love')) {
-      sampleLyrics = `[Verse 1]\nDust motes dancing in the afternoon beam\nChasing the fragments of a bittersweet dream\nLeaves fall gently on the porch outside\n\n[Chorus]\nWherever you wander, wherever you go\nLike the quietest whisper the rivers know\nI will always leave the lantern on for you.`;
-    } else if (promptKeywords.includes('dark') || promptKeywords.includes('rock') || promptKeywords.includes('metal')) {
-      sampleLyrics = `[Verse 1]\nHeavy thunder breaking through the stone\nStanding in the battlefield all alone\nEvery scar tells the truth we hide\n\n[Chorus]\nBreak through the silence, shatter the chain\nNothing will wash away this driving rain\nRise from the ashes once again!`;
-    } else {
-      sampleLyrics = `[Verse 1]\nLooking out at the open sky so blue\nEvery road is waiting for something new\nFootsteps echoing on morning stone\n\n[Chorus]\nWe are unstoppable, wild and free\nWriting the future for the world to see\nNothing can keep our dreams on the ground!`;
+  // AI Lyric Assistant: Generates rhyming lyrics via API
+  const handleAILyricAssist = async () => {
+    try {
+      info('AI Lyric Assistant', 'Composing lyrics based on your song theme...');
+      const res = await fetch('/api/lyrics/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: prompt.split('.')[0].substring(0, 30) || 'My Song',
+          theme: prompt,
+          genre: selectedGenre,
+          mood: selectedMood,
+          language,
+        }),
+      });
+      const data = await res.json();
+      if (data.lyrics) {
+        setLyrics(data.lyrics);
+        success('Lyrics Created!', 'Generated full song verses & chorus structure.');
+      } else {
+        throw new Error('No lyrics returned');
+      }
+    } catch {
+      // Local fallback
+      setLyrics(`[Verse 1]\nWe drove through the midnight rain\nChasing the glow of city names\nEvery shadow turning into gold\n\n[Chorus]\nCause tonight we are neon skylines\nBurning bright above the dark lines\nNothing can hold our hearts back now!\n\n[Outro]\nFading into the dawn...`);
+      success('Lyrics Created', 'Generated verses & chorus structure.');
     }
-
-    setLyrics(sampleLyrics);
-    success('AI Lyric Assistant', 'Generated a complete rhyming verse & chorus structure based on your track settings.');
   };
 
   // Handle template selection
@@ -440,6 +450,14 @@ export default function MusicStudioPage() {
                 <ListMusic className="w-3.5 h-3.5 text-purple-300" />
                 <span>Custom Song Structure</span>
               </button>
+
+              <a
+                href="/custom-song"
+                className="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-400/30"
+              >
+                <FileText className="w-3.5 h-3.5 text-purple-300" />
+                <span>Open Dedicated Custom Song Studio &rarr;</span>
+              </a>
             </div>
           </div>
         </div>

@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Phone,
   Sparkles,
+  Mic2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { SUPPORT_CONFIG } from '@/lib/support-config';
@@ -24,6 +25,7 @@ import { SUPPORT_CONFIG } from '@/lib/support-config';
 export const NAV_ITEMS = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Music Studio', href: '/studio', icon: Music2, badge: 'Vocal AI' },
+  { name: 'Custom Song', href: '/custom-song', icon: Mic2, badge: 'Lyrics' },
   { name: 'SFX Studio', href: '/sfx', icon: Volume2, badge: 'v3' },
   { name: 'My Library', href: '/library', icon: Library },
   { name: 'Projects', href: '/projects', icon: FolderKanban },
@@ -40,22 +42,22 @@ export function Sidebar({ className = '' }: { className?: string }) {
   return (
     <aside
       aria-label="Studio Sidebar Navigation"
-      className={`w-64 shrink-0 bg-midnight-950/90 dark:bg-midnight-950/90 light:bg-white border-r border-studio-border/60 dark:border-white/10 light:border-slate-200 backdrop-blur-xl flex flex-col justify-between h-screen sticky top-0 transition-colors z-30 ${className}`}
+      className={`w-64 shrink-0 bg-white dark:bg-midnight-950 border-r border-slate-200 dark:border-white/10 backdrop-blur-xl flex flex-col justify-between h-screen sticky top-0 transition-colors z-30 shadow-sm ${className}`}
     >
       <div>
         {/* Brand Header */}
-        <div className="p-5 border-b border-studio-border/50 dark:border-white/10 light:border-slate-200 flex items-center justify-between">
+        <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-studio-blue via-studio-violet to-cyan-400 p-0.5 shadow-lg shadow-studio-blue/20">
-              <div className="w-full h-full bg-midnight-950 rounded-[10px] flex items-center justify-center">
+              <div className="w-full h-full bg-slate-900 dark:bg-midnight-950 rounded-[10px] flex items-center justify-center">
                 <Music2 className="w-5 h-5 text-cyan-300 group-hover:scale-110 transition-transform" />
               </div>
             </div>
             <div>
-              <span className="font-bold text-base tracking-tight bg-gradient-to-r from-white via-slate-200 to-cyan-300 dark:from-white dark:via-slate-200 dark:to-cyan-300 light:from-slate-900 light:via-slate-800 light:to-studio-violet bg-clip-text text-transparent">
+              <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
                 SONICFORGE
               </span>
-              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold tracking-wider">
+              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-studio-blue/10 text-studio-blue dark:bg-cyan-500/10 dark:text-cyan-400 border border-studio-blue/20 dark:border-cyan-500/20 font-bold tracking-wider">
                 STUDIO
               </span>
             </div>
@@ -71,22 +73,24 @@ export function Sidebar({ className = '' }: { className?: string }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group ${
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-semibold transition-all group ${
                   isActive
-                    ? 'bg-gradient-to-r from-studio-blue/20 to-studio-violet/20 text-white dark:text-white light:text-studio-blue border border-studio-blue/40 shadow-sm shadow-studio-blue/10 font-semibold'
-                    : 'text-slate-400 hover:text-slate-200 dark:hover:text-slate-200 light:hover:text-slate-900 hover:bg-slate-800/40 light:hover:bg-slate-100'
+                    ? 'bg-gradient-to-r from-studio-blue/15 to-studio-violet/15 dark:from-studio-blue/25 dark:to-studio-violet/25 text-studio-blue dark:text-white border border-studio-blue/30 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-850/60'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon
                     className={`w-4 h-4 transition-colors ${
-                      isActive ? 'text-cyan-400 light:text-studio-blue' : 'text-slate-400 group-hover:text-slate-200 light:group-hover:text-slate-800'
+                      isActive
+                        ? 'text-studio-blue dark:text-cyan-400'
+                        : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
                     }`}
                   />
                   <span>{item.name}</span>
                 </div>
                 {item.badge && (
-                  <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded-full bg-studio-violet/20 border border-studio-violet/30 text-studio-violet light:bg-studio-violet/10 light:text-studio-violet">
+                  <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-full bg-studio-violet/15 border border-studio-violet/30 text-studio-violet dark:text-purple-300">
                     {item.badge}
                   </span>
                 )}
@@ -97,51 +101,49 @@ export function Sidebar({ className = '' }: { className?: string }) {
       </div>
 
       {/* User Footer / Support Contact */}
-      <div className="p-3 border-t border-studio-border/50 dark:border-white/10 light:border-slate-200 space-y-2">
-        <a
-          href={`tel:${SUPPORT_CONFIG.supportPhone}`}
-          className="flex items-center justify-between p-2 rounded-xl bg-slate-900/40 dark:bg-slate-900/40 light:bg-slate-100/80 border border-white/5 light:border-slate-200 text-[11px] text-slate-400 hover:text-emerald-400 transition-colors"
-          title="Direct Support Line"
-        >
-          <div className="flex items-center gap-2">
-            <Phone className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Support:</span>
+      <div className="p-3 border-t border-slate-200 dark:border-white/10 space-y-2">
+        {/* Support Hotline pill */}
+        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-900 border border-slate-200/80 dark:border-white/5 text-[11px] space-y-1">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+            <span className="font-semibold">Support Desk</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           </div>
-          <span className="font-mono font-medium text-emerald-400">{SUPPORT_CONFIG.supportPhoneDisplay}</span>
-        </a>
+          <a
+            href={`tel:${SUPPORT_CONFIG.supportPhone}`}
+            className="flex items-center gap-1.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+          >
+            <Phone className="w-3 h-3" />
+            <span>{SUPPORT_CONFIG.supportPhoneDisplay}</span>
+          </a>
+        </div>
 
-        {user ? (
-          <div className="p-2.5 rounded-xl bg-midnight-900/60 dark:bg-midnight-900/60 light:bg-slate-100 border border-white/5 light:border-slate-200 flex items-center justify-between">
-            <Link href="/settings" className="flex items-center gap-2.5 min-w-0 group">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-studio-violet to-studio-blue flex items-center justify-center text-xs font-bold text-white shrink-0">
-                {profile?.displayName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || 'P'}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-200 dark:text-slate-200 light:text-slate-900 truncate group-hover:text-cyan-300 transition-colors">
-                  {profile?.displayName || 'Studio Artist'}
-                </p>
-                <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
-              </div>
-            </Link>
+        {/* User Account / Guest */}
+        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-900 border border-slate-200/80 dark:border-white/5 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-slate-900 dark:text-slate-200 truncate">
+              {profile?.displayName || user?.email?.split('@')[0] || 'Studio Guest'}
+            </p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+              {user?.email || 'Local Session'}
+            </p>
+          </div>
+          {user ? (
             <button
               onClick={() => logout()}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+              className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
             </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
+          ) : (
             <Link
               href="/login"
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gradient-to-r from-studio-blue to-studio-violet text-white text-xs font-semibold shadow-md shadow-studio-blue/20 hover:opacity-95 transition-opacity"
+              className="text-[11px] font-bold text-studio-blue dark:text-cyan-400 hover:underline"
             >
-              <span>Sign In</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              Sign In
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </aside>
   );
