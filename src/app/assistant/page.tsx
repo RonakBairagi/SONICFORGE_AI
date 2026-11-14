@@ -95,11 +95,11 @@ export default function AssistantPage() {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         recognition.onresult = (event: any) => {
-          let currentTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            currentTranscript += event.results[i][0].transcript;
+          let fullTranscript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            fullTranscript += event.results[i][0].transcript;
           }
-          setInputText(currentTranscript);
+          setInputText(fullTranscript);
         };
 
         recognition.onerror = (e: { error: string }) => {
@@ -152,11 +152,18 @@ export default function AssistantPage() {
   const speakWithRime = async (text: string, messageId: string) => {
     try {
       setIsSpeakingAudio(messageId);
+      // Clean markdown tags for natural speech synthesis
+      const speechText = text
+        .replace(/[*_#`[\]()]/g, '')
+        .replace(/\n+/g, ' ')
+        .trim()
+        .substring(0, 300);
+
       const res = await fetch('/api/voice/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: text.substring(0, 300), // Clean clip for TTS
+          text: speechText,
           speaker: selectedSpeaker,
           lang: 'en',
         }),

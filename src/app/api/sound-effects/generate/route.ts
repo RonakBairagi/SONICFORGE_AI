@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
       loop = false,
     } = body;
 
-    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const apiKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
     if (!apiKey) {
       return NextResponse.json(
         {

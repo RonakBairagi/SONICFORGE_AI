@@ -36,7 +36,7 @@ export async function GET() {
   });
 
   // 2. Check ElevenLabs API Key & Subscription (Safe read-only call)
-  const elKey = process.env.ELEVENLABS_API_KEY;
+  const elKey = (process.env.ELEVENLABS_API_KEY || process.env.ELEVEN_LABS_API_KEY)?.trim();
   if (!elKey) {
     results.push({
       service: 'ElevenLabs Core API',
@@ -169,12 +169,16 @@ export async function GET() {
   }
 
   // 3. Check Rime TTS Configuration & Connectivity
-  const rimeKey = process.env.RIME_TTS_API_KEY;
+  const rimeKey = (
+    process.env.RIME_TTS_API_KEY ||
+    process.env.RIMETTS_API_KEY ||
+    process.env.RIME_API_KEY
+  )?.trim();
   if (!rimeKey) {
     results.push({
       service: 'Rime Coda TTS API',
       status: 'missing',
-      details: 'RIME_TTS_API_KEY is not defined in server environment.',
+      details: 'RIME_TTS_API_KEY or RIMETTS_API_KEY is not defined in server environment.',
       lastChecked: now,
     });
   } else {

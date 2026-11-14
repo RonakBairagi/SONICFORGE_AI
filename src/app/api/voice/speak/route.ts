@@ -5,11 +5,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { text, speaker = 'astra', lang = 'en' } = body;
 
-    const apiKey = process.env.RIME_TTS_API_KEY;
+    const apiKey = (
+      process.env.RIME_TTS_API_KEY ||
+      process.env.RIMETTS_API_KEY ||
+      process.env.RIME_API_KEY
+    )?.trim();
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: 'Rime TTS API key is not configured on the server.',
+          error:
+            'Rime TTS API key is not configured on the server. Please check your Vercel environment variables (RIME_TTS_API_KEY or RIMETTS_API_KEY).',
           code: 'MISSING_API_KEY',
         },
         { status: 500 }
