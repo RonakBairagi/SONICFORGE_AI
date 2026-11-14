@@ -11,7 +11,6 @@ import {
   Disc3,
   Loader2,
   Sparkles,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { useAudioPlayer } from '@/context/AudioPlayerContext';
 import { WaveformVisualizer } from './WaveformVisualizer';
@@ -50,7 +49,9 @@ export function AudioPlayer() {
 
   const subtitle =
     current.type === 'track'
-      ? `${current.item.genre} • ${current.item.mood}`
+      ? `${current.item.genre} • ${current.item.mood}${
+          current.item.creationMode === 'full_song' ? ' • AI Vocals' : ''
+        }`
       : current.type === 'sfx'
       ? `Sound Effect • ${current.item.category}`
       : current.subtitle || 'Audio preview';
@@ -79,7 +80,7 @@ export function AudioPlayer() {
   return (
     <aside
       aria-label="Audio Playback Dock"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-midnight-900/95 backdrop-blur-xl border-t border-studio-border/70 shadow-2xl px-4 py-3 sm:px-6 transition-all duration-200"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-midnight-900/95 dark:bg-midnight-900/95 light:bg-white/95 backdrop-blur-xl border-t border-studio-border/70 dark:border-white/10 light:border-slate-200 shadow-2xl px-4 py-3 sm:px-6 transition-all duration-200"
     >
       {audioError && (
         <div className="max-w-7xl mx-auto mb-2 px-3 py-1.5 rounded-lg bg-rose-950/70 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
@@ -96,17 +97,17 @@ export function AudioPlayer() {
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-3 md:gap-6 justify-between">
         {/* Track Info */}
         <div className="flex items-center gap-3 w-full md:w-1/4 min-w-0">
-          <div className="relative shrink-0 w-11 h-11 rounded-lg bg-gradient-to-br from-studio-violet/40 to-studio-blue/40 border border-white/10 flex items-center justify-center overflow-hidden">
+          <div className="relative shrink-0 w-11 h-11 rounded-lg bg-gradient-to-br from-studio-violet/40 to-studio-blue/40 border border-white/10 light:border-slate-200 flex items-center justify-center overflow-hidden">
             <Disc3
-              className={`w-6 h-6 text-cyan-300 ${isPlaying ? 'animate-spin' : ''}`}
+              className={`w-6 h-6 text-cyan-300 dark:text-cyan-300 light:text-studio-blue ${isPlaying ? 'animate-spin' : ''}`}
               style={{ animationDuration: '4s' }}
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-slate-100 truncate flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-slate-100 dark:text-slate-100 light:text-slate-900 truncate flex items-center gap-1.5">
               {title}
             </p>
-            <p className="text-xs text-slate-400 truncate flex items-center gap-1">
+            <p className="text-xs text-slate-400 dark:text-slate-400 light:text-slate-500 truncate flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-studio-cyan" />
               {subtitle}
             </p>
@@ -132,7 +133,7 @@ export function AudioPlayer() {
             </button>
 
             {/* Time labels */}
-            <span className="text-xs font-mono text-slate-400 min-w-[36px] text-right">
+            <span className="text-xs font-mono text-slate-400 dark:text-slate-400 light:text-slate-600 min-w-[36px] text-right">
               {formatTime(currentTime)}
             </span>
 
@@ -146,7 +147,7 @@ export function AudioPlayer() {
               />
             </div>
 
-            <span className="text-xs font-mono text-slate-400 min-w-[36px]">
+            <span className="text-xs font-mono text-slate-400 dark:text-slate-400 light:text-slate-600 min-w-[36px]">
               {formatTime(duration)}
             </span>
           </div>
@@ -158,14 +159,14 @@ export function AudioPlayer() {
           <div className="relative">
             <button
               onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-              className="px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 border border-white/5 text-[11px] font-mono text-slate-300 transition-colors"
+              className="px-2 py-1 rounded bg-slate-800/80 dark:bg-slate-800/80 light:bg-slate-100 hover:bg-slate-700/80 dark:hover:bg-slate-700/80 light:hover:bg-slate-200 border border-white/5 light:border-slate-200 text-[11px] font-mono text-slate-300 dark:text-slate-300 light:text-slate-700 transition-colors"
               title="Playback speed"
             >
               {playbackRate}x
             </button>
 
             {showSpeedMenu && (
-              <div className="absolute bottom-full mb-2 right-0 bg-midnight-850 border border-studio-border rounded-lg shadow-xl p-1 z-50 flex flex-col gap-0.5">
+              <div className="absolute bottom-full mb-2 right-0 bg-midnight-850 dark:bg-midnight-850 light:bg-white border border-studio-border dark:border-white/10 light:border-slate-200 rounded-lg shadow-xl p-1 z-50 flex flex-col gap-0.5">
                 {speeds.map((s) => (
                   <button
                     key={s}
@@ -176,7 +177,7 @@ export function AudioPlayer() {
                     className={`px-3 py-1 text-xs rounded text-left font-mono transition-colors ${
                       playbackRate === s
                         ? 'bg-studio-blue text-white'
-                        : 'text-slate-300 hover:bg-slate-800'
+                        : 'text-slate-300 dark:text-slate-300 light:text-slate-700 hover:bg-slate-800 dark:hover:bg-slate-800 light:hover:bg-slate-100'
                     }`}
                   >
                     {s}x
@@ -190,7 +191,7 @@ export function AudioPlayer() {
           <div className="hidden sm:flex items-center gap-1.5 group">
             <button
               onClick={toggleMute}
-              className="text-slate-400 hover:text-white p-1 rounded transition-colors"
+              className="text-slate-400 dark:text-slate-400 light:text-slate-600 hover:text-white dark:hover:text-white light:hover:text-slate-900 p-1 rounded transition-colors"
               title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted || volume === 0 ? (
@@ -206,7 +207,7 @@ export function AudioPlayer() {
               step="0.02"
               value={isMuted ? 0 : volume}
               onChange={(e) => setVolumeLevel(parseFloat(e.target.value))}
-              className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-studio-cyan"
+              className="w-16 h-1 bg-slate-700 dark:bg-slate-700 light:bg-slate-300 rounded-lg appearance-none cursor-pointer accent-studio-cyan"
               title="Volume"
             />
           </div>
@@ -214,7 +215,7 @@ export function AudioPlayer() {
           {/* Download */}
           <button
             onClick={handleDownload}
-            className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-white/5 text-slate-300 hover:text-cyan-300 transition-colors"
+            className="p-1.5 rounded-lg bg-slate-800/80 dark:bg-slate-800/80 light:bg-slate-100 hover:bg-slate-700 dark:hover:bg-slate-700 light:hover:bg-slate-200 border border-white/5 light:border-slate-200 text-slate-300 dark:text-slate-300 light:text-slate-700 hover:text-cyan-300 transition-colors"
             title="Download Audio (MP3)"
           >
             <Download className="w-4 h-4" />
@@ -223,7 +224,7 @@ export function AudioPlayer() {
           {/* Close */}
           <button
             onClick={closePlayer}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-lg hover:bg-slate-800 dark:hover:bg-slate-800 light:hover:bg-slate-100 text-slate-400 dark:text-slate-400 light:text-slate-500 hover:text-white dark:hover:text-white light:hover:text-slate-900 transition-colors"
             title="Close Player"
           >
             <X className="w-4 h-4" />
@@ -233,4 +234,3 @@ export function AudioPlayer() {
     </aside>
   );
 }
-

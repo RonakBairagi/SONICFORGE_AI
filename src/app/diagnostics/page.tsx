@@ -90,35 +90,35 @@ export default function DiagnosticsPage() {
     switch (status) {
       case 'verified':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
             <CheckCircle2 className="w-3.5 h-3.5" />
             Verified &amp; Active
           </span>
         );
       case 'configured':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20">
             <Activity className="w-3.5 h-3.5" />
             Configured
           </span>
         );
       case 'missing':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
             <AlertTriangle className="w-3.5 h-3.5" />
             Missing Config
           </span>
         );
       case 'failed':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
             <XCircle className="w-3.5 h-3.5" />
             Check Failed
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
             {status}
           </span>
         );
@@ -129,17 +129,17 @@ export default function DiagnosticsPage() {
     <AppShell>
       <div className="space-y-6">
         {/* Banner */}
-        <div className="p-6 sm:p-8 rounded-3xl bg-midnight-900/80 border border-studio-border/70 backdrop-blur-xl shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-6 sm:p-8 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-studio-blue/10 border border-studio-blue/20 text-cyan-300 text-xs font-semibold mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-studio-blue/10 border border-studio-blue/20 text-studio-blue dark:text-cyan-300 text-xs font-semibold mb-3">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Zero-Leakage Security Inspection</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Activity className="w-6 h-6 text-cyan-400" />
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <Activity className="w-6 h-6 text-studio-blue dark:text-cyan-400" />
               Integration Status &amp; Diagnostics
             </h1>
-            <p className="text-xs text-slate-400 mt-1 max-w-xl">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
               Real-time health verification for ElevenLabs, Rime TTS, Firebase Auth, Firestore, and
               browser audio subsystems. Secret API keys are never exposed.
             </p>
@@ -148,7 +148,7 @@ export default function DiagnosticsPage() {
           <button
             onClick={fetchDiagnostics}
             disabled={loading}
-            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
             <span>Run Health Check</span>
@@ -156,8 +156,8 @@ export default function DiagnosticsPage() {
         </div>
 
         {/* Diagnostics Table / Cards */}
-        <div className="p-6 rounded-2xl bg-midnight-900/70 border border-studio-border/60 shadow-xl space-y-4">
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+        <div className="p-6 rounded-3xl bg-white/80 dark:bg-midnight-900/70 border border-slate-200 dark:border-studio-border/60 shadow-xl space-y-4">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Server className="w-4 h-4 text-studio-blue" />
             Backend &amp; Provider Services
           </h2>
@@ -172,22 +172,22 @@ export default function DiagnosticsPage() {
               {diagnostics.map((d, idx) => (
                 <div
                   key={idx}
-                  className="p-4 rounded-xl bg-midnight-950/70 border border-studio-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-midnight-950/70 border border-slate-200 dark:border-studio-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2.5">
-                      <span className="text-xs font-bold text-slate-200">{d.service}</span>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{d.service}</span>
                       {getStatusBadge(d.status)}
                     </div>
-                    <p className="text-xs text-slate-400 mt-1 font-mono">{d.details}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">{d.details}</p>
                     {d.error && (
-                      <p className="text-xs text-rose-400 mt-1 font-mono">Error: {d.error}</p>
+                      <p className="text-xs text-rose-500 dark:text-rose-400 mt-1 font-mono">Error: {d.error}</p>
                     )}
                   </div>
 
-                  <div className="text-right shrink-0 text-[11px] text-slate-400 font-mono">
+                  <div className="text-right shrink-0 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                     {d.latencyMs !== undefined && (
-                      <span className="text-cyan-400 mr-2">{d.latencyMs}ms</span>
+                      <span className="text-studio-blue dark:text-cyan-400 font-bold mr-2">{d.latencyMs}ms</span>
                     )}
                     <span>{formatDate(d.lastChecked)}</span>
                   </div>
@@ -198,24 +198,24 @@ export default function DiagnosticsPage() {
         </div>
 
         {/* Browser Subsystem Verification */}
-        <div className="p-6 rounded-2xl bg-midnight-900/70 border border-studio-border/60 shadow-xl space-y-4">
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
-            <Volume2 className="w-4 h-4 text-cyan-400" />
+        <div className="p-6 rounded-3xl bg-white/80 dark:bg-midnight-900/70 border border-slate-200 dark:border-studio-border/60 shadow-xl space-y-4">
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Volume2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
             Client Subsystems Verification
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* AudioContext Test */}
-            <div className="p-4 rounded-xl bg-midnight-950/70 border border-studio-border/60 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-midnight-950/70 border border-slate-200 dark:border-studio-border/60 flex items-center justify-between gap-3 shadow-sm">
               <div>
-                <span className="text-xs font-bold text-slate-200">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   Web Audio API &amp; AudioContext
                 </span>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                   Decodes binary PCM samples for genuine waveform peaks
                 </p>
                 {audioPlaybackPassed && (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 mt-1 font-semibold">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold">
                     <Check className="w-3.5 h-3.5" /> Audio Engine Online
                   </span>
                 )}
@@ -223,7 +223,7 @@ export default function DiagnosticsPage() {
               <button
                 onClick={testWebAudioPlayback}
                 disabled={testingAudioPlayback}
-                className="px-3.5 py-1.5 rounded-lg bg-studio-blue/20 hover:bg-studio-blue/30 text-cyan-300 border border-studio-blue/40 text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0"
+                className="px-3.5 py-1.5 rounded-xl bg-studio-blue/15 hover:bg-studio-blue/25 text-studio-blue dark:text-cyan-300 border border-studio-blue/30 text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0"
               >
                 {testingAudioPlayback ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -235,16 +235,16 @@ export default function DiagnosticsPage() {
             </div>
 
             {/* Web Speech API */}
-            <div className="p-4 rounded-xl bg-midnight-950/70 border border-studio-border/60 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-midnight-950/70 border border-slate-200 dark:border-studio-border/60 flex items-center justify-between gap-3 shadow-sm">
               <div>
-                <span className="text-xs font-bold text-slate-200">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   Browser Speech Recognition
                 </span>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                   Microphone transcription for Sonic Assistant
                 </p>
               </div>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Supported
               </span>
@@ -255,4 +255,3 @@ export default function DiagnosticsPage() {
     </AppShell>
   );
 }
-

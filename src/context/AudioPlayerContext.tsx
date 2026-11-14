@@ -61,7 +61,6 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const audio = new Audio();
-    audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
 
     audio.addEventListener('loadstart', () => {
@@ -71,6 +70,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
     audio.addEventListener('loadedmetadata', () => {
       setDuration(audio.duration || 0);
+      setIsLoadingAudio(false);
+    });
+
+    audio.addEventListener('canplay', () => {
       setIsLoadingAudio(false);
     });
 
@@ -97,7 +100,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       setIsLoadingAudio(false);
       setIsPlaying(false);
       setAudioError('Failed to load audio stream. The link may have expired or is invalid.');
-      console.warn('Audio playback error:', e);
+      console.warn('Audio playback notice:', e);
     });
 
     return () => {
@@ -106,16 +109,37 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
   }, []);
 
-  // Compute REAL waveform peaks using Web Audio API AudioContext
+  // Compute REAL waveform peaks using Web Audio API AudioContext with safe data-URL decoding
   const computeRealWaveform = useCallback(async (audioUrl: string) => {
     try {
       if (typeof window === 'undefined') return;
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
 
-      const response = await fetch(audioUrl);
-      if (!response.ok) return;
-      const arrayBuffer = await response.arrayBuffer();
+      let arrayBuffer: ArrayBuffer;
+
+      // Handle data URLs cleanly without CORS issues
+      if (audioUrl.startsWith('data:audio/')) {
+        const base64Index = audioUrl.indexOf(';base64,');
+        if (base64Index !== -1) {
+          const base64Data = audioUrl.substring(base64Index + 8);
+          const binaryStr = window.atob(base64Data);
+          const len = binaryStr.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          arrayBuffer = bytes.buffer;
+        } else {
+          const res = await fetch(audioUrl);
+          arrayBuffer = await res.arrayBuffer();
+        }
+      } else {
+        const res = await fetch(audioUrl);
+        if (!res.ok) return;
+        arrayBuffer = await res.arrayBuffer();
+      }
+
       const ctx = new AudioCtx();
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
@@ -126,7 +150,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       const peaks: number[] = [];
 
       for (let i = 0; i < samples; i++) {
-        let blockStart = blockSize * i;
+        const blockStart = blockSize * i;
         let sum = 0;
         for (let j = 0; j < blockSize; j++) {
           sum += Math.abs(channelData[blockStart + j]);
@@ -140,8 +164,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       setAudioWaveformPeaks(normalized);
       await ctx.close();
     } catch (err) {
-      // If Web Audio API decode fails (e.g. cross-origin), compute deterministic pseudo peaks
       console.warn('Waveform audio buffer decode notice:', err);
+      // Fallback deterministic harmonic peaks
       const defaultBars = Array.from({ length: 48 }, (_, i) => 0.2 + 0.6 * Math.abs(Math.sin((i + 1) * 0.4)));
       setAudioWaveformPeaks(defaultBars);
     }
@@ -167,9 +191,17 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         return;
       }
 
+      // Set proper crossOrigin handling: do not set anonymous on data URIs!
+      if (url.startsWith('data:') || url.startsWith('blob:')) {
+        audioRef.current.removeAttribute('crossorigin');
+      } else {
+        audioRef.current.crossOrigin = 'anonymous';
+      }
+
       audioRef.current.src = url;
       audioRef.current.playbackRate = playbackRate;
       audioRef.current.volume = isMuted ? 0 : volume;
+
       audioRef.current
         .play()
         .then(() => {
@@ -178,10 +210,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           computeRealWaveform(url);
         })
         .catch((err) => {
-          console.warn('Playback prevented or failed:', err);
+          console.warn('Playback policy notice:', err);
           setIsPlaying(false);
           setIsLoadingAudio(false);
-          setAudioError(err.message || 'Playback blocked by browser policy. Click Play to start.');
+          // Don't show scary error if it's just autoplay restriction
+          if (err.name !== 'NotAllowedError') {
+            setAudioError(err.message || 'Click Play to start audio preview.');
+          }
         });
     },
     [playbackRate, isMuted, volume, computeRealWaveform]
@@ -293,4 +328,3 @@ export function useAudioPlayer() {
   }
   return context;
 }
-

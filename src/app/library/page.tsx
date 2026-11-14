@@ -119,25 +119,25 @@ export default function LibraryPage() {
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Library className="w-6 h-6 text-studio-blue" />
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <Library className="w-6 h-6 text-studio-blue dark:text-cyan-400" />
               My Audio Library
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Browse, filter, organize, and download all your AI music generations.
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Browse, filter, organize, and download all your AI music and vocal generations.
             </p>
           </div>
           <Link
             href="/studio"
-            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-gradient-to-r from-studio-blue to-studio-violet text-white text-xs font-semibold shadow-md shadow-studio-blue/20 hover:opacity-95 transition-all flex items-center gap-1.5"
+            className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-studio-blue to-studio-violet text-white text-xs font-bold shadow-md shadow-studio-blue/20 hover:opacity-95 transition-all flex items-center gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>New Generation</span>
+            <span>New Studio Generation</span>
           </Link>
         </div>
 
         {/* Filter Controls Bar */}
-        <div className="p-4 rounded-2xl bg-midnight-900/80 border border-studio-border/70 backdrop-blur-xl flex flex-col sm:flex-row items-center gap-3 justify-between">
+        <div className="p-4 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl flex flex-col sm:flex-row items-center gap-3 justify-between shadow-sm">
           {/* Search box */}
           <div className="relative w-full sm:w-80">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -146,7 +146,7 @@ export default function LibraryPage() {
               placeholder="Search by title, prompt, genre..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-midnight-950/80 border border-studio-border text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-studio-blue"
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-midnight-950/80 border border-slate-200 dark:border-studio-border text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-studio-blue"
             />
           </div>
 
@@ -155,7 +155,7 @@ export default function LibraryPage() {
             <select
               value={selectedGenreFilter}
               onChange={(e) => setSelectedGenreFilter(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-midnight-950/80 border border-studio-border text-xs text-slate-200 focus:outline-none focus:border-studio-blue"
+              className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-midnight-950/80 border border-slate-200 dark:border-studio-border text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-studio-blue"
             >
               <option value="all">All Genres</option>
               {uniqueGenres.map((g) => (
@@ -170,7 +170,7 @@ export default function LibraryPage() {
               onChange={(e) =>
                 setSortBy(e.target.value as 'date' | 'title' | 'duration')
               }
-              className="px-3 py-2 rounded-xl bg-midnight-950/80 border border-studio-border text-xs text-slate-200 focus:outline-none focus:border-studio-blue"
+              className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-midnight-950/80 border border-slate-200 dark:border-studio-border text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-studio-blue"
             >
               <option value="date">Sort: Newest</option>
               <option value="title">Sort: Title</option>
@@ -179,15 +179,15 @@ export default function LibraryPage() {
 
             <button
               onClick={() => setOnlyFavorites(!onlyFavorites)}
-              className={`px-3 py-2 rounded-xl text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors flex items-center gap-1.5 ${
                 onlyFavorites
-                  ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                  : 'bg-midnight-950/80 border-studio-border text-slate-400 hover:text-slate-200'
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-600 dark:text-rose-300'
+                  : 'bg-slate-50 dark:bg-midnight-950/80 border-slate-200 dark:border-studio-border text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <Heart
                 className={`w-3.5 h-3.5 ${
-                  onlyFavorites ? 'fill-current text-rose-400' : ''
+                  onlyFavorites ? 'fill-current text-rose-500' : ''
                 }`}
               />
               <span>Favorites</span>
@@ -201,12 +201,12 @@ export default function LibraryPage() {
             Loading library tracks...
           </div>
         ) : filteredTracks.length === 0 ? (
-          <div className="p-12 rounded-2xl bg-midnight-900/50 border border-studio-border/50 text-center space-y-3">
-            <Music2 className="w-12 h-12 text-slate-600 mx-auto" />
-            <h3 className="text-sm font-semibold text-slate-300">
+          <div className="p-12 rounded-3xl bg-white/60 dark:bg-midnight-900/50 border border-slate-200/60 dark:border-studio-border/50 text-center space-y-3">
+            <Music2 className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto" />
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               No matching tracks found
             </h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
               {searchQuery || onlyFavorites || selectedGenreFilter !== 'all'
                 ? 'Try adjusting your filters or search terms.'
                 : 'You have not generated any tracks yet. Jump into the Music Studio to create your first track!'}
@@ -240,4 +240,3 @@ export default function LibraryPage() {
     </AppShell>
   );
 }
-

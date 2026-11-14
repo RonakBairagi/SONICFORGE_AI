@@ -67,7 +67,7 @@ export default function AssistantPage() {
           id: generateId('msg'),
           role: 'assistant',
           content:
-            "Hello! I am Sonic Assistant, your AI music copilot. I can help you craft rich prompts for the ElevenLabs Music API, design sound effects, arrange compositions, and guide your studio workflow.\n\nTry asking: 'Write a synthwave prompt with 80s analog synthesizers' or 'How do I generate a cinematic impact?'",
+            "Hello! I am Sonic Assistant, your AI music copilot. I can help you craft rich prompts for full songs with AI vocals, design sound effects, structure lyrics, and troubleshoot your studio workflow.\n\nTry asking: 'Write a synthpop song with verse and chorus lyrics' or 'How do I generate a cinematic impact?'",
           timestamp: Date.now(),
         },
       ]);
@@ -277,22 +277,22 @@ export default function AssistantPage() {
     <AppShell>
       <div className="flex flex-col h-[calc(100vh-10rem)] max-w-4xl mx-auto space-y-4">
         {/* Top Header */}
-        <div className="flex items-center justify-between p-4 rounded-2xl bg-midnight-900/80 border border-studio-border/70 backdrop-blur-xl shrink-0">
+        <div className="flex items-center justify-between p-4 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shrink-0 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-studio-blue via-studio-violet to-cyan-400 p-0.5">
-              <div className="w-full h-full bg-midnight-950 rounded-[10px] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-studio-blue via-studio-violet to-cyan-400 p-0.5 shadow-md">
+              <div className="w-full h-full bg-slate-900 dark:bg-midnight-950 rounded-[14px] flex items-center justify-center">
                 <BotMessageSquare className="w-5 h-5 text-cyan-300" />
               </div>
             </div>
             <div>
-              <h1 className="text-sm font-bold text-white flex items-center gap-2">
+              <h1 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span>Sonic Assistant</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-studio-violet/20 border border-studio-violet/30 text-studio-violet font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-studio-violet/15 border border-studio-violet/30 text-studio-violet dark:text-purple-300 font-semibold">
                   Rime Voice Enabled
                 </span>
               </h1>
-              <p className="text-[11px] text-slate-400">
-                Music prompting, arrangements, foley advice &amp; troubleshooting
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Music prompting, lyrics engineering, foley advice &amp; troubleshooting
               </p>
             </div>
           </div>
@@ -301,10 +301,10 @@ export default function AssistantPage() {
             {/* Voice toggle */}
             <button
               onClick={() => setVoiceSynthesisEnabled(!voiceSynthesisEnabled)}
-              className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors ${
+              className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors font-medium ${
                 voiceSynthesisEnabled
-                  ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'
-                  : 'bg-slate-800 text-slate-400'
+                  ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
               }`}
               title={voiceSynthesisEnabled ? 'Voice output ON (Rime TTS)' : 'Voice output OFF'}
             >
@@ -319,7 +319,7 @@ export default function AssistantPage() {
             {/* Clear History */}
             <button
               onClick={handleClearHistory}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+              className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title="Clear Chat History"
             >
               <Trash2 className="w-4 h-4" />
@@ -328,7 +328,7 @@ export default function AssistantPage() {
         </div>
 
         {/* Chat Messages Scroll Area */}
-        <div className="flex-1 overflow-y-auto space-y-4 p-4 rounded-2xl bg-midnight-900/50 border border-studio-border/50 backdrop-blur-md">
+        <div className="flex-1 overflow-y-auto space-y-4 p-4 rounded-3xl bg-white/60 dark:bg-midnight-900/50 border border-slate-200 dark:border-studio-border/50 backdrop-blur-md shadow-inner">
           {messages.map((m) => {
             const isUser = m.role === 'user';
             const isSpeakingThis = isSpeakingAudio === m.id;
@@ -338,48 +338,48 @@ export default function AssistantPage() {
                 className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
               >
                 {!isUser && (
-                  <div className="w-8 h-8 rounded-lg bg-studio-blue/20 border border-studio-blue/30 flex items-center justify-center shrink-0 mt-1">
-                    <BotMessageSquare className="w-4 h-4 text-cyan-300" />
+                  <div className="w-8 h-8 rounded-xl bg-studio-blue/15 border border-studio-blue/30 flex items-center justify-center shrink-0 mt-1 shadow-sm">
+                    <BotMessageSquare className="w-4 h-4 text-studio-blue dark:text-cyan-300" />
                   </div>
                 )}
 
                 <div
-                  className={`max-w-[85%] sm:max-w-xl p-4 rounded-2xl text-xs sm:text-sm leading-relaxed space-y-2.5 ${
+                  className={`max-w-[85%] sm:max-w-xl p-4 sm:p-5 rounded-3xl text-xs sm:text-sm leading-relaxed space-y-2.5 ${
                     isUser
                       ? 'bg-gradient-to-r from-studio-blue to-studio-violet text-white rounded-tr-sm shadow-md'
-                      : 'bg-midnight-850/90 border border-studio-border/80 text-slate-200 rounded-tl-sm shadow-lg'
+                      : 'bg-white dark:bg-midnight-850/90 border border-slate-200 dark:border-studio-border/80 text-slate-800 dark:text-slate-200 rounded-tl-sm shadow-sm'
                   }`}
                 >
                   <p className="whitespace-pre-line">{m.content}</p>
 
                   {/* If assistant gave a suggested prompt with quick launch */}
                   {m.suggestedPrompt && (
-                    <div className="mt-3 p-3 rounded-xl bg-midnight-950/70 border border-cyan-500/30 text-xs space-y-2">
-                      <div className="flex items-center justify-between text-cyan-300 font-semibold text-[11px]">
+                    <div className="mt-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-midnight-950/70 border border-cyan-500/30 text-xs space-y-2">
+                      <div className="flex items-center justify-between text-cyan-600 dark:text-cyan-300 font-semibold text-[11px]">
                         <span className="flex items-center gap-1.5">
                           <Sparkles className="w-3.5 h-3.5" />
                           Recommended Studio Prompt
                         </span>
                       </div>
-                      <p className="text-slate-300 font-mono text-[11px] bg-slate-900/80 p-2 rounded border border-white/5">
+                      <p className="text-slate-700 dark:text-slate-300 font-mono text-[11px] bg-white dark:bg-slate-900/80 p-2.5 rounded-xl border border-slate-200 dark:border-white/5 shadow-inner">
                         &quot;{m.suggestedPrompt}&quot;
                       </p>
                       <button
                         onClick={() => handleLoadPromptToStudio(m.suggestedPrompt!)}
-                        className="w-full py-1.5 px-3 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
+                        className="w-full py-2 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 text-[11px] font-bold transition-colors flex items-center justify-center gap-1.5 shadow-sm"
                       >
-                        <Sliders className="w-3 h-3" />
+                        <Sliders className="w-3.5 h-3.5" />
                         <span>Load Prompt into Music Studio</span>
                       </button>
                     </div>
                   )}
 
                   {!isUser && (
-                    <div className="pt-1 flex items-center justify-between text-[10px] text-slate-400">
+                    <div className="pt-1 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
                       <span>Sonic Copilot</span>
                       <button
                         onClick={() => speakWithRime(m.content, m.id)}
-                        className="text-cyan-400/80 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                        className="text-studio-blue dark:text-cyan-400 hover:underline flex items-center gap-1 transition-colors font-medium"
                         title="Replay Voice (Rime Coda)"
                       >
                         {isSpeakingThis ? (
@@ -401,8 +401,8 @@ export default function AssistantPage() {
             );
           })}
           {isSending && (
-            <div className="flex items-center gap-2 text-xs text-slate-400 pl-11 animate-pulse">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pl-11 animate-pulse">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-studio-blue dark:text-cyan-400" />
               <span>Sonic Assistant is composing reply...</span>
             </div>
           )}
@@ -410,14 +410,14 @@ export default function AssistantPage() {
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 rounded-2xl bg-midnight-900/80 border border-studio-border/70 backdrop-blur-xl shrink-0 space-y-2">
+        <div className="p-3 sm:p-4 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shrink-0 space-y-2 shadow-sm">
           {micError && (
-            <p className="text-[11px] text-rose-400 px-2">{micError}</p>
+            <p className="text-[11px] text-rose-500 px-2">{micError}</p>
           )}
 
           {isListening && (
-            <div className="px-3 py-1.5 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-xs flex items-center gap-2 animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            <div className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-600 dark:text-cyan-300 text-xs flex items-center gap-2 animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-cyan-500 animate-ping" />
               <span>Listening to your voice... Speak your musical idea.</span>
             </div>
           )}
@@ -427,10 +427,10 @@ export default function AssistantPage() {
             <button
               type="button"
               onClick={toggleListening}
-              className={`p-3 rounded-xl transition-all ${
+              className={`p-3 rounded-2xl transition-all ${
                 isListening
                   ? 'bg-rose-500 text-white animate-pulse shadow-lg shadow-rose-500/30'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-cyan-300 hover:bg-slate-700'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-studio-blue dark:hover:text-cyan-300 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
               title={isListening ? 'Stop listening' : 'Start voice input (Microphone)'}
             >
@@ -448,16 +448,16 @@ export default function AssistantPage() {
               placeholder={
                 isListening
                   ? 'Transcribing speech...'
-                  : 'Ask about song structures, prompt engineering, instruments, or error troubleshooting...'
+                  : 'Ask about full vocal songs, lyric structures, instruments, or sound effects...'
               }
-              className="flex-1 p-3 rounded-xl bg-midnight-950/80 border border-studio-border text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-studio-blue focus:ring-1 focus:ring-studio-blue"
+              className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-midnight-950/80 border border-slate-200 dark:border-studio-border text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-studio-blue focus:ring-1 focus:ring-studio-blue shadow-inner"
             />
 
             {/* Send button */}
             <button
               onClick={() => handleSendMessage()}
               disabled={isSending || !inputText.trim()}
-              className="p-3 rounded-xl bg-gradient-to-r from-studio-blue to-studio-violet text-white hover:opacity-95 disabled:opacity-40 transition-all shadow-md shadow-studio-blue/20"
+              className="p-3 rounded-2xl bg-gradient-to-r from-studio-blue to-studio-violet text-white hover:opacity-95 disabled:opacity-40 transition-all shadow-md shadow-studio-blue/20"
               title="Send Message"
             >
               <Send className="w-5 h-5" />
@@ -468,4 +468,3 @@ export default function AssistantPage() {
     </AppShell>
   );
 }
-

@@ -108,11 +108,11 @@ export default function ProjectsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <FolderKanban className="w-6 h-6 text-studio-violet" />
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <FolderKanban className="w-6 h-6 text-studio-violet dark:text-purple-400" />
               Studio Projects
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               Group and structure music generations for film cues, game levels, podcasts, and albums.
             </p>
           </div>
@@ -127,10 +127,10 @@ export default function ProjectsPage() {
 
         {/* Project Selector Cards */}
         {projects.length === 0 ? (
-          <div className="p-12 rounded-2xl bg-midnight-900/50 border border-studio-border/50 text-center space-y-3">
-            <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
-            <h3 className="text-sm font-semibold text-slate-300">No projects yet</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+          <div className="p-12 rounded-3xl bg-white/60 dark:bg-midnight-900/50 border border-slate-200/60 dark:border-studio-border/50 text-center space-y-3">
+            <FolderOpen className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto" />
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">No projects yet</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
               Create your first project to organize related music tracks and sound effects.
             </p>
             <button
@@ -142,7 +142,7 @@ export default function ProjectsPage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {projects.map((proj) => {
               const isActive = proj.id === activeProjectId;
               const count = tracks.filter((t) => t.projectId === proj.id).length;
@@ -150,17 +150,17 @@ export default function ProjectsPage() {
                 <div
                   key={proj.id}
                   onClick={() => setActiveProjectId(proj.id)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between ${
+                  className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between shadow-sm ${
                     isActive
-                      ? 'bg-midnight-850 border-studio-violet shadow-lg shadow-studio-violet/10'
-                      : 'bg-midnight-900/70 hover:bg-midnight-850 border-studio-border hover:border-studio-violet/40'
+                      ? 'bg-slate-50 dark:bg-midnight-850 border-studio-violet shadow-lg shadow-studio-violet/10 ring-1 ring-studio-violet/30'
+                      : 'bg-white/80 dark:bg-midnight-900/70 hover:bg-slate-50/90 dark:hover:bg-midnight-850 border-slate-200 dark:border-studio-border hover:border-studio-violet/40'
                   }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Folder className={`w-4 h-4 ${isActive ? 'text-studio-cyan' : 'text-slate-400'}`} />
-                        <span className="text-xs font-semibold text-slate-200 group-hover:text-cyan-300 truncate">
+                        <Folder className={`w-4 h-4 ${isActive ? 'text-studio-violet' : 'text-slate-400'}`} />
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-studio-violet dark:group-hover:text-cyan-300 truncate">
                           {proj.name}
                         </span>
                       </div>
@@ -169,20 +169,20 @@ export default function ProjectsPage() {
                           e.stopPropagation();
                           handleDeleteProject(proj.id, proj.name);
                         }}
-                        className="p-1 text-slate-500 hover:text-rose-400 transition-colors"
+                        className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
                         title="Delete Project"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     {proj.description && (
-                      <p className="text-xs text-slate-400 line-clamp-2 mt-1">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">
                         {proj.description}
                       </p>
                     )}
                   </div>
-                  <div className="mt-4 pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 font-mono text-slate-300">
+                  <div className="mt-4 pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-slate-700 dark:text-slate-300">
                       {count} {count === 1 ? 'track' : 'tracks'}
                     </span>
                     <span>{formatDate(proj.createdAt)}</span>
@@ -196,13 +196,13 @@ export default function ProjectsPage() {
         {/* Selected Project Content */}
         {activeProject && (
           <div className="mt-8 space-y-4">
-            <div className="p-5 rounded-2xl bg-midnight-900/80 border border-studio-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="p-5 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>📁 {activeProject.name}</span>
                 </h2>
                 {activeProject.description && (
-                  <p className="text-xs text-slate-400 mt-1">{activeProject.description}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{activeProject.description}</p>
                 )}
               </div>
               <Link
@@ -215,9 +215,9 @@ export default function ProjectsPage() {
             </div>
 
             {projectTracks.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-midnight-900/40 border border-studio-border/40 text-center space-y-2">
-                <Music2 className="w-8 h-8 text-slate-600 mx-auto" />
-                <p className="text-xs text-slate-400">
+              <div className="p-8 rounded-3xl bg-white/60 dark:bg-midnight-900/40 border border-slate-200/60 dark:border-studio-border/40 text-center space-y-2">
+                <Music2 className="w-8 h-8 text-slate-400 dark:text-slate-600 mx-auto" />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   No tracks assigned to this project yet. In the Studio or Library, select &quot;{activeProject.name}&quot; when generating or moving a track.
                 </p>
               </div>
@@ -233,16 +233,16 @@ export default function ProjectsPage() {
 
         {/* Create Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 z-50 bg-midnight-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-md rounded-2xl bg-midnight-900 border border-studio-border p-6 shadow-2xl space-y-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-3xl bg-white dark:bg-midnight-900 border border-slate-200 dark:border-studio-border p-6 shadow-2xl space-y-4">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Folder className="w-5 h-5 text-studio-violet" />
                 Create New Studio Project
               </h3>
 
               <form onSubmit={handleCreateProject} className="space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-slate-300 block mb-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                     Project Name *
                   </label>
                   <input
@@ -251,12 +251,12 @@ export default function ProjectsPage() {
                     placeholder="e.g. Cyberpunk Film Score 2026"
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-midnight-950 border border-studio-border text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-studio-violet"
+                    className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-950 border border-slate-200 dark:border-studio-border text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-studio-violet"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-slate-300 block mb-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                     Description (Optional)
                   </label>
                   <textarea
@@ -264,7 +264,7 @@ export default function ProjectsPage() {
                     placeholder="Brief description of project themes, video cues, or game levels..."
                     value={newProjectDesc}
                     onChange={(e) => setNewProjectDesc(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-midnight-950 border border-studio-border text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-studio-violet resize-none"
+                    className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-950 border border-slate-200 dark:border-studio-border text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-studio-violet resize-none"
                   />
                 </div>
 
@@ -272,13 +272,13 @@ export default function ProjectsPage() {
                   <button
                     type="button"
                     onClick={() => setShowCreateModal(false)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-medium transition-colors"
+                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:text-white text-xs font-semibold transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-studio-violet to-studio-blue text-white text-xs font-semibold shadow-md hover:opacity-95 transition-opacity"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-studio-violet to-studio-blue text-white text-xs font-bold shadow-md hover:opacity-95 transition-opacity"
                   >
                     Create Project
                   </button>
@@ -291,4 +291,3 @@ export default function ProjectsPage() {
     </AppShell>
   );
 }
-
