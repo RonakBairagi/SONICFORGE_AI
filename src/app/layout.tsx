@@ -4,6 +4,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { AudioPlayerProvider } from '@/context/AudioPlayerContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { WelcomeScreen } from '@/components/ui/WelcomeScreen';
 
 export const metadata: Metadata = {
   title: 'SonicForge AI — Professional AI Music & Sound Studio',
@@ -22,7 +23,10 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>
             <ToastProvider>
-              <AudioPlayerProvider>{children}</AudioPlayerProvider>
+              <AudioPlayerProvider>
+                <WelcomeScreen />
+                {children}
+              </AudioPlayerProvider>
             </ToastProvider>
           </AuthProvider>
         </ThemeProvider>
