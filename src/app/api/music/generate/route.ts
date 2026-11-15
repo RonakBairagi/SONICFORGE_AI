@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Buffer } from 'buffer';
 
 /**
  * Helper to condense prompts for the ElevenLabs Sound Generation fallback engine
@@ -18,6 +19,7 @@ function buildAcousticFallbackPrompt(params: {
   isInstrumental: boolean;
 }): string {
   const {
+    title,
     genre = 'Modern Pop',
     mood = 'Uplifting',
     tempo = '120 BPM',
@@ -35,9 +37,11 @@ function buildAcousticFallbackPrompt(params: {
       ? instrumentation.slice(0, 3).join(', ')
       : 'piano, synthesizers, and drums';
 
+  const concept = (prompt || title || 'original melodic track').trim();
+
   if (isInstrumental) {
-    const base = `Instrumental music: ${genre}, ${mood}, ${tempo}. Arrangement featuring ${instrumentsStr}. ${prompt}`;
-    return base.substring(0, 420);
+    const base = `Instrumental music: ${genre}, ${mood}, ${tempo}. Arrangement featuring ${instrumentsStr}. Concept: ${concept}.`;
+    return base.length > 420 ? base.substring(0, 417) + '...' : base;
   }
 
   // Extract a concise vocal lyric snippet / hook from user lyrics if provided
@@ -49,12 +53,12 @@ function buildAcousticFallbackPrompt(params: {
       .filter((l) => l.length > 0 && !l.startsWith('[') && !l.endsWith(']'));
     if (cleanLines.length > 0) {
       lyricHook = cleanLines.slice(0, 2).join(' / ');
-      if (lyricHook.length > 90) lyricHook = lyricHook.substring(0, 87) + '...';
+      if (lyricHook.length > 80) lyricHook = lyricHook.substring(0, 77) + '...';
     }
   }
 
-  const vocalInfo = `${vocalStyle} (${vocalGender}${language !== 'English' ? `, ${language}` : ''})`;
-  let combined = `Full song with singing vocals: ${genre}, ${mood}, ${tempo}. Vocals: ${vocalInfo}.`;
+  const vocalInfo = `${vocalStyle} (${vocalGender}${language && language !== 'English' ? `, ${language}` : ''})`;
+  let combined = `Full song with singing vocals: ${genre}, ${mood}, ${tempo}. Concept: ${concept}. Vocals: ${vocalInfo}.`;
   if (lyricHook) {
     combined += ` Singing lyrics: "${lyricHook}".`;
   }
@@ -255,7 +259,7 @@ export async function POST(req: NextRequest) {
 
       const durationSeconds = Math.max(3.0, Math.min(15.0, Math.round(clampedDuration / 1000)));
 
-      const sfxResponse = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+      let sfxResponse = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
         method: 'POST',
         headers: {
           'xi-api-key': apiKey,
@@ -270,6 +274,30 @@ export async function POST(req: NextRequest) {
         signal: controller.signal,
       });
 
+      let usedSfxModel = 'eleven_text_to_sound_v3';
+
+      // If eleven_text_to_sound_v3 is not available on this tier, fallback to eleven_text_to_sound_v2
+      if (!sfxResponse.ok && sfxResponse.status === 400) {
+        const errCheck = await sfxResponse.clone().text();
+        if (errCheck.includes('model_id') || errCheck.includes('eleven_text_to_sound_v3')) {
+          sfxResponse = await fetch('https://api.elevenlabs.io/v1/sound-generation', {
+            method: 'POST',
+            headers: {
+              'xi-api-key': apiKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              text: acousticPrompt,
+              duration_seconds: durationSeconds,
+              prompt_influence: 0.4,
+              model_id: 'eleven_text_to_sound_v2',
+            }),
+            signal: controller.signal,
+          });
+          usedSfxModel = 'eleven_text_to_sound_v2';
+        }
+      }
+
       if (sfxResponse.ok) {
         clearTimeout(timeoutId);
         const audioBuffer = await sfxResponse.arrayBuffer();
@@ -281,7 +309,7 @@ export async function POST(req: NextRequest) {
           success: true,
           audioUrl: audioDataUrl,
           durationMs: durationSeconds * 1000,
-          modelId: 'eleven_text_to_sound_v3',
+          modelId: usedSfxModel,
           provider: 'elevenlabs',
           creationMode,
           title: title || effectivePrompt.split('.')[0].substring(0, 40),

@@ -88,8 +88,8 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   }
   try {
     const userRef = doc(firestore, 'users', uid);
-    const snap = await withTimeout(getDoc(userRef), 2500);
-    if (snap.exists()) {
+    const snap: any = await withTimeout(getDoc(userRef), 2500);
+    if (snap && snap.exists && snap.exists()) {
       return snap.data() as UserProfile;
     }
   } catch (error) {
@@ -126,13 +126,13 @@ export async function getUserTracks(userId: string): Promise<GeneratedTrack[]> {
 
   try {
     const q = query(collection(firestore, 'tracks'), where('userId', '==', userId));
-    const snapshot = await withTimeout(getDocs(q), 3000);
-    if (!snapshot.empty) {
+    const snapshot: any = await withTimeout(getDocs(q), 3000);
+    if (snapshot && !snapshot.empty) {
       const remoteTracks: GeneratedTrack[] = [];
-      snapshot.forEach((docSnap) => {
+      snapshot.forEach((docSnap: any) => {
         remoteTracks.push(docSnap.data() as GeneratedTrack);
       });
-      remoteTracks.sort((a, b) => b.createdAt - a.createdAt);
+      remoteTracks.sort((a: GeneratedTrack, b: GeneratedTrack) => b.createdAt - a.createdAt);
       setLocalCache(CACHE_KEYS.TRACKS, userId, remoteTracks);
       return remoteTracks;
     }
@@ -197,13 +197,13 @@ export async function getUserSoundEffects(userId: string): Promise<GeneratedSoun
 
   try {
     const q = query(collection(firestore, 'sound_effects'), where('userId', '==', userId));
-    const snapshot = await withTimeout(getDocs(q), 3000);
-    if (!snapshot.empty) {
+    const snapshot: any = await withTimeout(getDocs(q), 3000);
+    if (snapshot && !snapshot.empty) {
       const remoteSfx: GeneratedSoundEffect[] = [];
-      snapshot.forEach((docSnap) => {
+      snapshot.forEach((docSnap: any) => {
         remoteSfx.push(docSnap.data() as GeneratedSoundEffect);
       });
-      remoteSfx.sort((a, b) => b.createdAt - a.createdAt);
+      remoteSfx.sort((a: GeneratedSoundEffect, b: GeneratedSoundEffect) => b.createdAt - a.createdAt);
       setLocalCache(CACHE_KEYS.SFX, userId, remoteSfx);
       return remoteSfx;
     }
@@ -249,13 +249,13 @@ export async function getUserProjects(userId: string): Promise<StudioProject[]> 
 
   try {
     const q = query(collection(firestore, 'projects'), where('userId', '==', userId));
-    const snapshot = await withTimeout(getDocs(q), 3000);
-    if (!snapshot.empty) {
+    const snapshot: any = await withTimeout(getDocs(q), 3000);
+    if (snapshot && !snapshot.empty) {
       const remoteProjects: StudioProject[] = [];
-      snapshot.forEach((docSnap) => {
+      snapshot.forEach((docSnap: any) => {
         remoteProjects.push(docSnap.data() as StudioProject);
       });
-      remoteProjects.sort((a, b) => b.updatedAt - a.updatedAt);
+      remoteProjects.sort((a: StudioProject, b: StudioProject) => b.updatedAt - a.updatedAt);
       setLocalCache(CACHE_KEYS.PROJECTS, userId, remoteProjects);
       return remoteProjects;
     }
@@ -300,13 +300,13 @@ export async function getUserSupportTickets(userId: string): Promise<SupportTick
 
   try {
     const q = query(collection(firestore, 'support_tickets'), where('userId', '==', userId));
-    const snapshot = await withTimeout(getDocs(q), 3000);
-    if (!snapshot.empty) {
+    const snapshot: any = await withTimeout(getDocs(q), 3000);
+    if (snapshot && !snapshot.empty) {
       const tickets: SupportTicket[] = [];
-      snapshot.forEach((docSnap) => {
+      snapshot.forEach((docSnap: any) => {
         tickets.push(docSnap.data() as SupportTicket);
       });
-      tickets.sort((a, b) => b.createdAt - a.createdAt);
+      tickets.sort((a: SupportTicket, b: SupportTicket) => b.createdAt - a.createdAt);
       setLocalCache(CACHE_KEYS.TICKETS, userId, tickets);
       return tickets;
     }

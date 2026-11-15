@@ -117,11 +117,11 @@ export default function SoundEffectsStudioPage() {
 
   // Generation progress timer
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isGenerating) {
       setGenerationTimeElapsed(0);
       interval = setInterval(() => {
-        setGenerationTimeElapsed((prev) => prev + 1);
+        setGenerationTimeElapsed((prev: number) => prev + 1);
       }, 1000);
     }
     return () => clearInterval(interval);

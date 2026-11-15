@@ -1,0 +1,9 @@
+{
+  "files.associations": {
+    "*.ts": "typescript",
+    "*.tsx": "typescriptreact"
+  },
+  "typescript.tsdk": "C:\\Users\\imyin\\AppData\\Local\\Programs\\Antigravity IDE\\resources\\app\\node_modules\\typescript\\lib",
+  "typescript.validate.enable": true,
+  "javascript.validate.enable": true
+}

@@ -167,12 +167,12 @@ export default function MusicStudioPage() {
 
   // Generation progress timer & honest stage reporting
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isGenerating) {
       setGenerationTimeElapsed(0);
       setGenerationStage('Preparing musical arrangement and prompt tokens...');
       interval = setInterval(() => {
-        setGenerationTimeElapsed((prev) => {
+        setGenerationTimeElapsed((prev: number) => {
           const next = prev + 1;
           if (next >= 2 && next < 6) {
             setGenerationStage(

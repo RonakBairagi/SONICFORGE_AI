@@ -138,7 +138,7 @@ export default function CustomSongPage() {
 
   // Timer for generation
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (
       generationState === 'validating' ||
       generationState === 'preparing' ||
@@ -147,7 +147,7 @@ export default function CustomSongPage() {
       generationState === 'processing'
     ) {
       interval = setInterval(() => {
-        setGenerationTimeElapsed((prev) => prev + 1);
+        setGenerationTimeElapsed((prev: number) => prev + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
