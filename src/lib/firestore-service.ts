@@ -10,6 +10,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { firestore } from './firebase';
+import { uploadAudioToStorage, deleteAudioFromStorage } from './storage-service';
 import {
   GeneratedTrack,
   GeneratedSoundEffect,
@@ -56,7 +57,26 @@ function setLocalCache<T>(key: string, userId: string, data: T[]): void {
     const trimmed = data.slice(0, 25);
     localStorage.setItem(`${key}_${userId}`, JSON.stringify(trimmed));
   } catch (e) {
-    console.warn('LocalStorage save notice (exceeded or unavailable):', e);
+    console.warn('LocalStorage save notice (exceeded or unavailable), applying safe compaction:', e);
+    try {
+      // If quota exceeded, compact data to top 8 items
+      const compacted = data.slice(0, 8);
+      localStorage.setItem(`${key}_${userId}`, JSON.stringify(compacted));
+    } catch (_) {
+      // Fallback: minimal lightweight metadata storage
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const metadataOnly = data.slice(0, 10).map((item: any) => {
+          if (item && item.audioUrl && item.audioUrl.startsWith('data:audio/')) {
+            return { ...item, audioUrl: '' }; // Drop massive data URL in emergency to protect quota
+          }
+          return item;
+        });
+        localStorage.setItem(`${key}_${userId}`, JSON.stringify(metadataOnly));
+      } catch (finalErr) {
+        console.warn('LocalStorage critical quota limit reached:', finalErr);
+      }
+    }
   }
 }
 
@@ -106,6 +126,19 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 // TRACKS
 // -------------------------------------------------------------
 export async function saveTrack(track: GeneratedTrack): Promise<void> {
+  // If user is authenticated and audio is a base64 Data URL, upload to Firebase Storage
+  if (track.userId && track.userId !== 'guest' && track.audioUrl && track.audioUrl.startsWith('data:audio/')) {
+    try {
+      const storageUrl = await uploadAudioToStorage(track.audioUrl, track.userId, track.id);
+      if (storageUrl) {
+        track.audioUrl = storageUrl;
+        track.storagePath = storageUrl;
+      }
+    } catch (e) {
+      console.warn('Storage upload notice for track, preserving data URL:', e);
+    }
+  }
+
   const localList = getLocalCache<GeneratedTrack>(CACHE_KEYS.TRACKS, track.userId);
   const updatedList = [track, ...localList.filter((t) => t.id !== track.id)];
   setLocalCache(CACHE_KEYS.TRACKS, track.userId, updatedList);
@@ -144,7 +177,12 @@ export async function getUserTracks(userId: string): Promise<GeneratedTrack[]> {
 
 export async function deleteTrack(trackId: string, userId: string): Promise<void> {
   const localList = getLocalCache<GeneratedTrack>(CACHE_KEYS.TRACKS, userId);
+  const targetTrack = localList.find((t) => t.id === trackId);
   setLocalCache(CACHE_KEYS.TRACKS, userId, localList.filter((t) => t.id !== trackId));
+
+  if (targetTrack && targetTrack.storagePath) {
+    deleteAudioFromStorage(targetTrack.storagePath).catch(() => {});
+  }
 
   if (firestore && userId !== 'guest') {
     try {
@@ -177,6 +215,19 @@ export async function updateTrackMetadata(
 // SOUND EFFECTS
 // -------------------------------------------------------------
 export async function saveSoundEffect(sfx: GeneratedSoundEffect): Promise<void> {
+  // If user is authenticated and audio is a base64 Data URL, upload to Firebase Storage
+  if (sfx.userId && sfx.userId !== 'guest' && sfx.audioUrl && sfx.audioUrl.startsWith('data:audio/')) {
+    try {
+      const storageUrl = await uploadAudioToStorage(sfx.audioUrl, sfx.userId, sfx.id);
+      if (storageUrl) {
+        sfx.audioUrl = storageUrl;
+        sfx.storagePath = storageUrl;
+      }
+    } catch (e) {
+      console.warn('Storage upload notice for sfx, preserving data URL:', e);
+    }
+  }
+
   const localList = getLocalCache<GeneratedSoundEffect>(CACHE_KEYS.SFX, sfx.userId);
   const updatedList = [sfx, ...localList.filter((s) => s.id !== sfx.id)];
   setLocalCache(CACHE_KEYS.SFX, sfx.userId, updatedList);
@@ -215,7 +266,12 @@ export async function getUserSoundEffects(userId: string): Promise<GeneratedSoun
 
 export async function deleteSoundEffect(sfxId: string, userId: string): Promise<void> {
   const localList = getLocalCache<GeneratedSoundEffect>(CACHE_KEYS.SFX, userId);
+  const targetSfx = localList.find((s) => s.id === sfxId);
   setLocalCache(CACHE_KEYS.SFX, userId, localList.filter((s) => s.id !== sfxId));
+
+  if (targetSfx && targetSfx.storagePath) {
+    deleteAudioFromStorage(targetSfx.storagePath).catch(() => {});
+  }
 
   if (firestore && userId !== 'guest') {
     try {

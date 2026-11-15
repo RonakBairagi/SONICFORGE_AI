@@ -39,6 +39,7 @@ interface AudioPlayerContextType {
   toggleMute: () => void;
   setRate: (rate: number) => void;
   closePlayer: () => void;
+  clearAudioError: () => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(undefined);
@@ -56,6 +57,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [audioWaveformPeaks, setAudioWaveformPeaks] = useState<number[]>([]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const waveformCacheRef = useRef<Map<string, number[]>>(new Map());
+
+  const clearAudioError = useCallback(() => {
+    setAudioError(null);
+  }, []);
 
   // Initialize Audio element on mount
   useEffect(() => {
@@ -109,10 +115,17 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
   }, []);
 
-  // Compute REAL waveform peaks using Web Audio API AudioContext with safe data-URL decoding
+  // Compute REAL waveform peaks using Web Audio API AudioContext with safe data-URL decoding and memory caching
   const computeRealWaveform = useCallback(async (audioUrl: string) => {
     try {
       if (typeof window === 'undefined') return;
+
+      // Instant cache hit: skip expensive arrayBuffer decoding if already computed
+      if (waveformCacheRef.current.has(audioUrl)) {
+        setAudioWaveformPeaks(waveformCacheRef.current.get(audioUrl)!);
+        return;
+      }
+
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
 
@@ -161,6 +174,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       // Normalize peaks
       const max = Math.max(...peaks, 0.001);
       const normalized = peaks.map((p) => Math.max(0.12, p / max));
+      waveformCacheRef.current.set(audioUrl, normalized);
       setAudioWaveformPeaks(normalized);
       await ctx.close();
     } catch (err) {
@@ -314,6 +328,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         toggleMute,
         setRate,
         closePlayer,
+        clearAudioError,
       }}
     >
       {children}

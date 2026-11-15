@@ -233,3 +233,4 @@ Rising strong.`;
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

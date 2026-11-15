@@ -21,13 +21,15 @@ import {
   Radio,
   X,
   Clock,
+  FolderKanban,
+  Copy,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { useAudioPlayer } from '@/context/AudioPlayerContext';
-import { saveSoundEffect, getUserSoundEffects } from '@/lib/firestore-service';
-import { GeneratedSoundEffect } from '@/types';
+import { saveSoundEffect, getUserSoundEffects, getUserProjects } from '@/lib/firestore-service';
+import { GeneratedSoundEffect, StudioProject } from '@/types';
 import { generateId, formatTime, formatDate, downloadAudioFile } from '@/lib/utils';
 
 const SFX_CATEGORIES = [
@@ -103,17 +105,22 @@ export default function SoundEffectsStudioPage() {
   const [durationSeconds, setDurationSeconds] = useState(4.0);
   const [promptInfluence, setPromptInfluence] = useState(0.35);
   const [loop, setLoop] = useState(false);
+  const [batchCount, setBatchCount] = useState<1 | 2 | 3>(1);
+  const [projects, setProjects] = useState<StudioProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationTimeElapsed, setGenerationTimeElapsed] = useState(0);
   const [recentSfx, setRecentSfx] = useState<GeneratedSoundEffect[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const uid = user ? user.uid : 'guest';
+
+  // Reliable hydration for both authenticated users and guests
   useEffect(() => {
-    if (user) {
-      getUserSoundEffects(user.uid).then((items) => setRecentSfx(items.slice(0, 12)));
-    }
-  }, [user]);
+    getUserSoundEffects(uid).then((items) => setRecentSfx(items.slice(0, 18)));
+    getUserProjects(uid).then(setProjects);
+  }, [uid]);
 
   // Generation progress timer
   useEffect(() => {
@@ -145,6 +152,16 @@ export default function SoundEffectsStudioPage() {
     info('Generation Cancelled', 'Sound effect rendering was stopped.');
   };
 
+  const handleDownloadAll = () => {
+    if (recentSfx.length === 0) return;
+    info('Downloading Sound Effects', `Exporting ${recentSfx.length} files...`);
+    recentSfx.forEach((sfx, index) => {
+      setTimeout(() => {
+        downloadAudioFile(sfx.audioUrl, sfx.title);
+      }, index * 250);
+    });
+  };
+
   const handleGenerateSFX = async () => {
     if (!prompt.trim()) {
       warning('Prompt is empty', 'Describe the sound effect you wish to generate.');
@@ -155,68 +172,89 @@ export default function SoundEffectsStudioPage() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // Strict 25s client timeout to guarantee SFX NEVER gets stuck in an infinite loading state
+    // Strict 28s client timeout guard
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 25000);
+    }, 28000);
 
     const startTime = Date.now();
+    const activeProject = projects.find((p) => p.id === selectedProjectId);
 
     try {
-      const response = await fetch('/api/sound-effects/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: prompt.trim(),
-          duration_seconds: durationSeconds,
-          prompt_influence: promptInfluence,
-          loop,
-        }),
-        signal: controller.signal,
+      // Calculate influence variations for batch mode
+      const takes = Array.from({ length: batchCount }, (_, i) => {
+        if (i === 0) return promptInfluence;
+        if (i === 1) return Math.max(0.1, Number((promptInfluence - 0.12).toFixed(2)));
+        return Math.min(0.9, Number((promptInfluence + 0.12).toFixed(2)));
       });
+
+      const renderedSfxList: GeneratedSoundEffect[] = [];
+
+      for (let takeIndex = 0; takeIndex < takes.length; takeIndex++) {
+        const currentInfluence = takes[takeIndex];
+        const response = await fetch('/api/sound-effects/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: prompt.trim(),
+            duration_seconds: durationSeconds,
+            prompt_influence: currentInfluence,
+            loop,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to render take ${takeIndex + 1}`);
+        }
+
+        const data = await response.json();
+        const takeDuration = (Date.now() - startTime) / 1000;
+        const takeSuffix = batchCount > 1 ? ` (Take ${takeIndex + 1})` : '';
+
+        const newSfx: GeneratedSoundEffect = {
+          id: generateId('sfx'),
+          userId: uid,
+          title: `${prompt.split('.')[0].substring(0, 32)}${takeSuffix}`.trim() || 'Sound Effect',
+          prompt,
+          category: selectedCategory,
+          durationSeconds: data.durationSeconds || durationSeconds,
+          promptInfluence: currentInfluence,
+          loop,
+          modelId: data.modelId || 'eleven_text_to_sound_v3',
+          provider: 'elevenlabs',
+          audioUrl: data.audioUrl,
+          createdAt: Date.now() + takeIndex,
+          projectId: activeProject ? activeProject.id : null,
+          status: 'completed',
+          isFavorite: false,
+          generationTimeSeconds: Number(takeDuration.toFixed(1)),
+        };
+
+        await saveSoundEffect(newSfx);
+        renderedSfxList.push(newSfx);
+      }
 
       clearTimeout(timeoutId);
 
-      const data = await response.json();
+      setRecentSfx((prev) => [...renderedSfxList, ...prev]);
+      const totalGenTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate sound effect');
-      }
-
-      const generationTimeSeconds = (Date.now() - startTime) / 1000;
-
-      const newSfx: GeneratedSoundEffect = {
-        id: generateId('sfx'),
-        userId: user ? user.uid : 'guest',
-        title: prompt.split('.')[0].substring(0, 36) || 'Sound Effect',
-        prompt,
-        category: selectedCategory,
-        durationSeconds: data.durationSeconds || durationSeconds,
-        promptInfluence: data.promptInfluence || promptInfluence,
-        loop,
-        modelId: 'eleven_text_to_sound_v3',
-        provider: 'elevenlabs',
-        audioUrl: data.audioUrl,
-        createdAt: Date.now(),
-        status: 'completed',
-        isFavorite: false,
-        generationTimeSeconds,
-      };
-
-      await saveSoundEffect(newSfx);
-      setRecentSfx((prev) => [newSfx, ...prev]);
       success(
-        'Sound Effect Rendered!',
-        `Generated in ${generationTimeSeconds.toFixed(1)}s using ElevenLabs Sound Generation v3.`
+        batchCount > 1 ? `${batchCount} SFX Takes Rendered!` : 'Sound Effect Rendered!',
+        `Generated in ${totalGenTime}s via ElevenLabs Sound Engine.${activeProject ? ` Linked to "${activeProject.name}".` : ''}`
       );
 
-      play({ type: 'sfx', item: newSfx });
+      if (renderedSfxList.length > 0) {
+        play({ type: 'sfx', item: renderedSfxList[0] });
+      }
     } catch (err: unknown) {
       clearTimeout(timeoutId);
       if (err instanceof DOMException && err.name === 'AbortError') {
         error(
           'Timeout or Cancelled',
-          'Sound effect rendering was cancelled or exceeded 25s. The system recovered cleanly.'
+          'Sound effect rendering was cancelled or exceeded safety timeout. System recovered cleanly.'
         );
       } else {
         const message = err instanceof Error ? err.message : 'SFX generation failed';
@@ -386,6 +424,56 @@ export default function SoundEffectsStudioPage() {
                 </div>
               </div>
 
+              {/* Batch Variations Selector */}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1.5">
+                  Batch Generation (Takes)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([1, 2, 3] as const).map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setBatchCount(count)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                        batchCount === count
+                          ? 'bg-cyan-500 text-white shadow-sm'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {count} {count === 1 ? 'Take' : 'Takes'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  {batchCount > 1
+                    ? 'Generates distinct acoustic variations with varied prompt influence.'
+                    : 'Single audio take rendering.'}
+                </p>
+              </div>
+
+              {/* Project Assignment */}
+              {projects.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 mb-1.5">
+                    <FolderKanban className="w-3.5 h-3.5 text-studio-violet dark:text-purple-400" />
+                    <span>Attach to Project</span>
+                  </label>
+                  <select
+                    value={selectedProjectId}
+                    onChange={(e) => setSelectedProjectId(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-950 border border-slate-200 dark:border-studio-border text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="">None (Independent SFX)</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Loop Toggle */}
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-midnight-950/60 border border-slate-200 dark:border-white/5">
                 <div>
@@ -463,9 +551,22 @@ export default function SoundEffectsStudioPage() {
               <Layers className="w-5 h-5 text-studio-blue dark:text-cyan-400" />
               Generated Sound Library
             </h2>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-              {recentSfx.length} effects
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                {recentSfx.length} effects
+              </span>
+              {recentSfx.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadAll}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  title="Download all generated audio files sequentially"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Export All Files</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {recentSfx.length === 0 ? (

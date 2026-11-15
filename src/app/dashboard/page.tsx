@@ -12,29 +12,44 @@ import {
   Activity,
   ArrowRight,
   Play,
+  Pause,
   TrendingUp,
   Clock,
   Disc3,
   Sliders,
   Mic2,
+  Heart,
+  Download,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { TrackCard } from '@/components/studio/TrackCard';
 import { useAuth } from '@/context/AuthContext';
+import { useAudioPlayer } from '@/context/AudioPlayerContext';
 import {
   getUserTracks,
   getUserSoundEffects,
   getUserProjects,
 } from '@/lib/firestore-service';
-import { GeneratedTrack, StudioProject } from '@/types';
-import { formatDate } from '@/lib/utils';
+import { GeneratedTrack, GeneratedSoundEffect, StudioProject } from '@/types';
+import { formatDate, downloadAudioFile } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { user, profile } = useAuth();
+  const { play, pause, current, isPlaying } = useAudioPlayer();
 
   const [recentTracks, setRecentTracks] = useState<GeneratedTrack[]>([]);
+  const [recentSfx, setRecentSfx] = useState<GeneratedSoundEffect[]>([]);
   const [projects, setProjects] = useState<StudioProject[]>([]);
-  const [sfxCount, setSfxCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<'tracks' | 'sfx'>('tracks');
+
+  // Genuine Statistics State
+  const [stats, setStats] = useState({
+    tracksCount: 0,
+    sfxCount: 0,
+    projectsCount: 0,
+    totalMinutes: 0,
+    favoritesCount: 0,
+  });
 
   const uid = user ? user.uid : 'guest';
 
@@ -44,9 +59,24 @@ export default function DashboardPage() {
       getUserProjects(uid),
       getUserSoundEffects(uid),
     ]).then(([tracks, projs, sfx]) => {
-      setRecentTracks(tracks.slice(0, 4));
-      setProjects(projs.slice(0, 3));
-      setSfxCount(sfx.length);
+      setRecentTracks(tracks.slice(0, 5));
+      setRecentSfx(sfx.slice(0, 5));
+      setProjects(projs.slice(0, 4));
+
+      const tracksMs = tracks.reduce((acc, t) => acc + (t.durationMs || 30000), 0);
+      const sfxSec = sfx.reduce((acc, s) => acc + (s.durationSeconds || 4), 0);
+      const totalMin = Number(((tracksMs / 60000) + (sfxSec / 60)).toFixed(1));
+
+      const favTracks = tracks.filter((t) => t.isFavorite).length;
+      const favSfx = sfx.filter((s) => s.isFavorite).length;
+
+      setStats({
+        tracksCount: tracks.length,
+        sfxCount: sfx.length,
+        projectsCount: projs.length,
+        totalMinutes: totalMin,
+        favoritesCount: favTracks + favSfx,
+      });
     });
   }, [uid]);
 
@@ -93,6 +123,64 @@ export default function DashboardPage() {
                 <span>Design SFX</span>
               </Link>
             </div>
+          </div>
+        </div>
+
+        {/* Genuine Studio Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+          <div className="p-4 rounded-2xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shadow-sm">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Tracks</span>
+              <Music2 className="w-4 h-4 text-studio-blue dark:text-cyan-400" />
+            </div>
+            <p className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+              {stats.tracksCount}
+            </p>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Produced songs</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shadow-sm">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Sound Effects</span>
+              <Volume2 className="w-4 h-4 text-cyan-500" />
+            </div>
+            <p className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+              {stats.sfxCount}
+            </p>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Audio designs</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shadow-sm">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Audio Minutes</span>
+              <Clock className="w-4 h-4 text-studio-violet dark:text-purple-400" />
+            </div>
+            <p className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+              {stats.totalMinutes}m
+            </p>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Rendered playback</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shadow-sm">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Projects</span>
+              <FolderKanban className="w-4 h-4 text-emerald-500" />
+            </div>
+            <p className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+              {stats.projectsCount}
+            </p>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Organized sets</span>
+          </div>
+
+          <div className="col-span-2 sm:col-span-1 p-4 rounded-2xl bg-white dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 backdrop-blur-xl shadow-sm">
+            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Favorites</span>
+              <Heart className="w-4 h-4 text-rose-500" />
+            </div>
+            <p className="text-2xl font-black font-mono text-slate-900 dark:text-white">
+              {stats.favoritesCount}
+            </p>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Starred items</span>
           </div>
         </div>
 
@@ -206,34 +294,123 @@ export default function DashboardPage() {
 
         {/* Recent Generations & Active Projects Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Recent Tracks */}
+          {/* Recent Tracks & SFX Switcher */}
           <div className="lg:col-span-8 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Disc3 className="w-5 h-5 text-studio-blue dark:text-cyan-400" />
-                Latest Studio Generations
-              </h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('tracks')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    activeTab === 'tracks'
+                      ? 'bg-studio-blue text-white shadow-md shadow-studio-blue/20'
+                      : 'bg-slate-100 dark:bg-midnight-900/80 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Disc3 className="w-3.5 h-3.5" />
+                  <span>Music Tracks ({stats.tracksCount})</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('sfx')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    activeTab === 'sfx'
+                      ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
+                      : 'bg-slate-100 dark:bg-midnight-900/80 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>Sound Effects ({stats.sfxCount})</span>
+                </button>
+              </div>
+
               <Link
-                href="/library"
-                className="text-xs font-semibold text-slate-500 hover:text-studio-blue dark:text-slate-400 dark:hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                href={activeTab === 'tracks' ? '/library' : '/sfx'}
+                className="text-xs font-semibold text-slate-500 hover:text-studio-blue dark:text-slate-400 dark:hover:text-cyan-300 flex items-center gap-1 transition-colors self-start sm:self-auto"
               >
-                <span>View Library</span>
+                <span>{activeTab === 'tracks' ? 'Open Library' : 'SFX Studio'}</span>
                 <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
 
-            {recentTracks.length === 0 ? (
+            {activeTab === 'tracks' ? (
+              recentTracks.length === 0 ? (
+                <div className="p-8 rounded-3xl bg-white/60 dark:bg-midnight-900/50 border border-slate-200/60 dark:border-studio-border/50 text-center space-y-2">
+                  <Music2 className="w-8 h-8 text-slate-400 dark:text-slate-600 mx-auto" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    No music generated yet. Open the Music Studio or Custom Song Studio to produce your first song.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentTracks.map((t) => (
+                    <TrackCard key={t.id} track={t} />
+                  ))}
+                </div>
+              )
+            ) : recentSfx.length === 0 ? (
               <div className="p-8 rounded-3xl bg-white/60 dark:bg-midnight-900/50 border border-slate-200/60 dark:border-studio-border/50 text-center space-y-2">
-                <Music2 className="w-8 h-8 text-slate-400 dark:text-slate-600 mx-auto" />
+                <Volume2 className="w-8 h-8 text-slate-400 dark:text-slate-600 mx-auto" />
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  No music generated yet. Open the Music Studio to produce your first song.
+                  No sound effects created yet. Open the SFX Studio to design custom impacts, ambient tones, and risers.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {recentTracks.map((t) => (
-                  <TrackCard key={t.id} track={t} />
-                ))}
+              <div className="space-y-2.5">
+                {recentSfx.map((sfx) => {
+                  const isThisPlaying =
+                    current?.type === 'sfx' && current.item.id === sfx.id && isPlaying;
+                  return (
+                    <div
+                      key={sfx.id}
+                      className="p-3.5 rounded-2xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/60 hover:border-cyan-500/40 transition-all flex items-center justify-between gap-3 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <button
+                          onClick={() => {
+                            if (isThisPlaying) {
+                              pause();
+                            } else {
+                              play({ type: 'sfx', item: sfx });
+                            }
+                          }}
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                            isThisPlaying
+                              ? 'bg-cyan-500 text-white animate-pulse'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-cyan-500 hover:text-white'
+                          }`}
+                        >
+                          {isThisPlaying ? (
+                            <Pause className="w-4 h-4 fill-current" />
+                          ) : (
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
+                          )}
+                        </button>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {sfx.title}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {sfx.category} • {sfx.durationSeconds}s
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                          {formatDate(sfx.createdAt)}
+                        </span>
+                        {sfx.audioUrl && (
+                          <button
+                            onClick={() => downloadAudioFile(sfx.audioUrl, sfx.title)}
+                            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-500 transition-colors"
+                            title="Download MP3"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

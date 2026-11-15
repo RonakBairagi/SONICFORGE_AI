@@ -13,26 +13,34 @@ import {
   Sparkles,
   ArrowRight,
   FolderOpen,
+  Volume2,
+  Play,
+  Pause,
+  Download,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { TrackCard } from '@/components/studio/TrackCard';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
+import { useAudioPlayer } from '@/context/AudioPlayerContext';
 import {
   getUserProjects,
   saveProject,
   deleteProject,
   getUserTracks,
+  getUserSoundEffects,
 } from '@/lib/firestore-service';
-import { StudioProject, GeneratedTrack } from '@/types';
-import { generateId, formatDate } from '@/lib/utils';
+import { StudioProject, GeneratedTrack, GeneratedSoundEffect } from '@/types';
+import { generateId, formatDate, downloadAudioFile } from '@/lib/utils';
 
 export default function ProjectsPage() {
   const { user } = useAuth();
   const { success, error, warning } = useToast();
+  const { play, pause, current, isPlaying } = useAudioPlayer();
 
   const [projects, setProjects] = useState<StudioProject[]>([]);
   const [tracks, setTracks] = useState<GeneratedTrack[]>([]);
+  const [soundEffects, setSoundEffects] = useState<GeneratedSoundEffect[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   // Modal / Create state
@@ -44,12 +52,14 @@ export default function ProjectsPage() {
   const uid = user ? user.uid : 'guest';
 
   const loadData = async () => {
-    const [userProjects, userTracks] = await Promise.all([
+    const [userProjects, userTracks, userSfx] = await Promise.all([
       getUserProjects(uid),
       getUserTracks(uid),
+      getUserSoundEffects(uid),
     ]);
     setProjects(userProjects);
     setTracks(userTracks);
+    setSoundEffects(userSfx);
     if (userProjects.length > 0 && !activeProjectId) {
       setActiveProjectId(userProjects[0].id);
     }
@@ -101,6 +111,7 @@ export default function ProjectsPage() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const projectTracks = tracks.filter((t) => t.projectId === activeProjectId);
+  const projectSfx = soundEffects.filter((s) => s.projectId === activeProjectId);
 
   return (
     <AppShell>
@@ -113,7 +124,7 @@ export default function ProjectsPage() {
               Studio Projects
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Group and structure music generations for film cues, game levels, podcasts, and albums.
+              Group and structure music generations and sound effects for film cues, game levels, podcasts, and albums.
             </p>
           </div>
           <button
@@ -145,7 +156,8 @@ export default function ProjectsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {projects.map((proj) => {
               const isActive = proj.id === activeProjectId;
-              const count = tracks.filter((t) => t.projectId === proj.id).length;
+              const tCount = tracks.filter((t) => t.projectId === proj.id).length;
+              const sCount = soundEffects.filter((s) => s.projectId === proj.id).length;
               return (
                 <div
                   key={proj.id}
@@ -183,7 +195,7 @@ export default function ProjectsPage() {
                   </div>
                   <div className="mt-4 pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
                     <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-slate-700 dark:text-slate-300">
-                      {count} {count === 1 ? 'track' : 'tracks'}
+                      {tCount} {tCount === 1 ? 'track' : 'tracks'} • {sCount} SFX
                     </span>
                     <span>{formatDate(proj.createdAt)}</span>
                   </div>
@@ -195,7 +207,7 @@ export default function ProjectsPage() {
 
         {/* Selected Project Content */}
         {activeProject && (
-          <div className="mt-8 space-y-4">
+          <div className="mt-8 space-y-6">
             <div className="p-5 rounded-3xl bg-white/80 dark:bg-midnight-900/80 border border-slate-200 dark:border-studio-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
               <div>
                 <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -205,29 +217,113 @@ export default function ProjectsPage() {
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{activeProject.description}</p>
                 )}
               </div>
-              <Link
-                href="/studio"
-                className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-studio-blue hover:bg-blue-600 text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Generate for this Project</span>
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/studio"
+                  className="px-3.5 py-1.5 rounded-xl bg-studio-blue hover:bg-blue-600 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <Music2 className="w-3.5 h-3.5" />
+                  <span>Generate Music</span>
+                </Link>
+                <Link
+                  href="/sfx"
+                  className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>Design SFX</span>
+                </Link>
+              </div>
             </div>
 
-            {projectTracks.length === 0 ? (
-              <div className="p-8 rounded-3xl bg-white/60 dark:bg-midnight-900/40 border border-slate-200/60 dark:border-studio-border/40 text-center space-y-2">
-                <Music2 className="w-8 h-8 text-slate-400 dark:text-slate-600 mx-auto" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  No tracks assigned to this project yet. In the Studio or Library, select &quot;{activeProject.name}&quot; when generating or moving a track.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {projectTracks.map((track) => (
-                  <TrackCard key={track.id} track={track} projects={projects} />
-                ))}
-              </div>
-            )}
+            {/* Project Music Tracks */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <Music2 className="w-4 h-4 text-studio-blue dark:text-cyan-400" />
+                <span>Music Tracks ({projectTracks.length})</span>
+              </h3>
+              {projectTracks.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-white/60 dark:bg-midnight-900/40 border border-slate-200/60 dark:border-studio-border/40 text-center space-y-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    No music tracks in this project yet. Link tracks from the Library or Studio.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {projectTracks.map((track) => (
+                    <TrackCard key={track.id} track={track} projects={projects} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Project Sound Effects */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-cyan-500" />
+                <span>Sound Effects ({projectSfx.length})</span>
+              </h3>
+              {projectSfx.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-white/60 dark:bg-midnight-900/40 border border-slate-200/60 dark:border-studio-border/40 text-center space-y-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    No sound effects linked to this project yet. In the SFX Studio, select &quot;{activeProject.name}&quot; when generating.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {projectSfx.map((sfx) => {
+                    const isThisPlaying =
+                      current?.type === 'sfx' && current.item.id === sfx.id && isPlaying;
+                    return (
+                      <div
+                        key={sfx.id}
+                        className="p-3.5 rounded-2xl bg-white/80 dark:bg-midnight-900/70 border border-slate-200 dark:border-studio-border/60 hover:border-cyan-500/40 transition-all flex items-center justify-between gap-3 shadow-sm"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <button
+                            onClick={() => {
+                              if (isThisPlaying) {
+                                pause();
+                              } else {
+                                play({ type: 'sfx', item: sfx });
+                              }
+                            }}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                              isThisPlaying
+                                ? 'bg-cyan-500 text-white animate-pulse'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-cyan-500 hover:text-white'
+                            }`}
+                          >
+                            {isThisPlaying ? (
+                              <Pause className="w-4 h-4 fill-current" />
+                            ) : (
+                              <Play className="w-4 h-4 fill-current ml-0.5" />
+                            )}
+                          </button>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                              {sfx.title}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              {sfx.category} • {sfx.durationSeconds}s
+                            </p>
+                          </div>
+                        </div>
+
+                        {sfx.audioUrl && (
+                          <button
+                            onClick={() => downloadAudioFile(sfx.audioUrl, sfx.title)}
+                            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-cyan-500 transition-colors"
+                            title="Download MP3"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

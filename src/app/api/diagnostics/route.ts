@@ -230,6 +230,56 @@ export async function GET() {
     }
   }
 
+  // 4. Check Google Gemini Assistant & Lyric API
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!geminiKey) {
+    results.push({
+      service: 'Google Gemini 1.5 Flash API',
+      status: 'configured',
+      details: 'GEMINI_API_KEY optional. Semantic music intelligence engine is active as copilot fallback.',
+      lastChecked: now,
+    });
+  } else {
+    try {
+      const startTime = Date.now();
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Ping' }] }],
+          }),
+        }
+      );
+      const latency = Date.now() - startTime;
+      if (geminiRes.ok) {
+        results.push({
+          service: 'Google Gemini 1.5 Flash API',
+          status: 'verified',
+          details: 'Official Gemini 1.5 Flash model verified & connected.',
+          latencyMs: latency,
+          lastChecked: now,
+        });
+      } else {
+        results.push({
+          service: 'Google Gemini 1.5 Flash API',
+          status: 'failed',
+          details: `API key rejected with status ${geminiRes.status}. Semantic fallback active.`,
+          lastChecked: now,
+        });
+      }
+    } catch (err: unknown) {
+      results.push({
+        service: 'Google Gemini 1.5 Flash API',
+        status: 'failed',
+        details: 'Network error reaching Google Generative Language API. Semantic fallback active.',
+        error: err instanceof Error ? err.message : 'Network error',
+        lastChecked: now,
+      });
+    }
+  }
+
   return NextResponse.json({
     timestamp: now,
     results,

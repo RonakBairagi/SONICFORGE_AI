@@ -157,13 +157,12 @@ export default function MusicStudioPage() {
   const [projects, setProjects] = useState<StudioProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
-  // Load user tracks & projects
+  // Load user tracks & projects reliably for signed-in users and guests
+  const uid = user ? user.uid : 'guest';
   useEffect(() => {
-    if (user) {
-      getUserTracks(user.uid).then((tracks) => setRecentTracks(tracks.slice(0, 10)));
-      getUserProjects(user.uid).then(setProjects);
-    }
-  }, [user]);
+    getUserTracks(uid).then((tracks) => setRecentTracks(tracks.slice(0, 10)));
+    getUserProjects(uid).then(setProjects);
+  }, [uid]);
 
   // Generation progress timer & honest stage reporting
   useEffect(() => {

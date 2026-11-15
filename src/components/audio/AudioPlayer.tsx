@@ -34,6 +34,7 @@ export function AudioPlayer() {
     toggleMute,
     setRate,
     closePlayer,
+    clearAudioError,
   } = useAudioPlayer();
 
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -86,7 +87,7 @@ export function AudioPlayer() {
         <div className="max-w-7xl mx-auto mb-2 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-300 text-xs flex items-center justify-between">
           <span>{audioError}</span>
           <button
-            onClick={() => {}}
+            onClick={clearAudioError}
             className="text-rose-500 hover:text-rose-700 dark:hover:text-white underline ml-2 font-semibold"
           >
             Dismiss
