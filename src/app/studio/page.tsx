@@ -276,10 +276,10 @@ export default function MusicStudioPage() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // Safety timeout: abort client request after 45s so the UI never hangs for 600-700 seconds
+    // Safety timeout: abort client request after 90s so deep models finish without hanging indefinitely
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 45000);
+    }, 90000);
 
     const startTime = Date.now();
 

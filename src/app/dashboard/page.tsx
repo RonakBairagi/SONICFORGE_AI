@@ -20,6 +20,10 @@ import {
   Mic2,
   Heart,
   Download,
+  Radio,
+  Piano,
+  Layers,
+  BookOpen,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { TrackCard } from '@/components/studio/TrackCard';
@@ -290,6 +294,185 @@ export default function DashboardPage() {
               <ArrowRight className="w-3.5 h-3.5" />
             </div>
           </Link>
+        </div>
+
+        {/* Live Instrument & Creative Music Tools */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+                Live Instrument &amp; Music Creation Tools
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Playable browser instruments, pitch coaches, theory explorers, and arrangement tools powered by Web Audio.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* SonicTune Tuner */}
+            <Link
+              href="/tuner"
+              className="p-5 rounded-3xl bg-white dark:bg-midnight-900/80 hover:bg-slate-50 dark:hover:bg-midnight-850 border border-slate-200 dark:border-white/10 hover:border-studio-blue/40 transition-all group flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="w-10 h-10 rounded-2xl bg-studio-blue/15 border border-studio-blue/30 flex items-center justify-center text-studio-blue mb-3 group-hover:scale-110 transition-transform">
+                  <Radio className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-studio-blue">
+                    SonicTune Tuner
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-studio-blue/10 text-studio-blue border border-studio-blue/20">
+                    Pitchy
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Real-time guitar, bass, ukulele, and chromatic tuner with live needle gauge and 440 Hz calibration.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center text-xs text-studio-blue font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+                <span>Tune instrument</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+
+            {/* Sonic Harmonium */}
+            <Link
+              href="/harmonium"
+              className="p-5 rounded-3xl bg-white dark:bg-midnight-900/80 hover:bg-slate-50 dark:hover:bg-midnight-850 border border-slate-200 dark:border-white/10 hover:border-studio-violet/40 transition-all group flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="w-10 h-10 rounded-2xl bg-studio-violet/15 border border-studio-violet/30 flex items-center justify-center text-studio-violet mb-3 group-hover:scale-110 transition-transform">
+                  <Piano className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-studio-violet">
+                    Sonic Harmonium
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-studio-violet/10 text-studio-violet border border-studio-violet/20">
+                    Sargam
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Playable Indian reed harmonium with dynamic Sa transposition, keyboard mappings, and Web MIDI.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center text-xs text-studio-violet font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+                <span>Play harmonium</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+
+            {/* Raga & Rhythm Practice */}
+            <Link
+              href="/practice"
+              className="p-5 rounded-3xl bg-white dark:bg-midnight-900/80 hover:bg-slate-50 dark:hover:bg-midnight-850 border border-slate-200 dark:border-white/10 hover:border-cyan-400/40 transition-all group flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-400 mb-3 group-hover:scale-110 transition-transform">
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-cyan-400">
+                    Raga &amp; Rhythm Studio
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    Taal
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Tanpura drone, Indian Taal cycles (Teentaal, Keherwa, Rupak), and guided Alankar exercises.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center text-xs text-cyan-400 font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+                <span>Practice rhythm</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+
+            {/* Vocal Pitch Coach */}
+            <Link
+              href="/vocal-coach"
+              className="p-5 rounded-3xl bg-white dark:bg-midnight-900/80 hover:bg-slate-50 dark:hover:bg-midnight-850 border border-slate-200 dark:border-white/10 hover:border-emerald-400/40 transition-all group flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 mb-3 group-hover:scale-110 transition-transform">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-400">
+                    Vocal Pitch Coach
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Live
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Live microphone singing pitch analysis, scrolling vocal contour trail, and target note stability matching.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center text-xs text-emerald-400 font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+                <span>Coach voice</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+
+            {/* Sonic Loop Lab */}
+            <Link
+              href="/loop-lab"
+              className="p-5 rounded-3xl bg-white dark:bg-midnight-900/80 hover:bg-slate-50 dark:hover:bg-midnight-850 border border-slate-200 dark:border-white/10 hover:border-amber-400/40 transition-all group flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-400 mb-3 group-hover:scale-110 transition-transform">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-400">
+                    Sonic Loop Lab
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    Mixer
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Multi-track arranger with live mic recording, file import, volume/pan faders, and offline WAV export.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center text-xs text-amber-400 font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+                <span>Open arranger</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+
+            {/* Chord & Scale Explorer */}
+            <Link
+              href="/chords"
+              className="p-5 rounded-3xl bg-white dark:bg-midnight-900/80 hover:bg-slate-50 dark:hover:bg-midnight-850 border border-slate-200 dark:border-white/10 hover:border-indigo-400/40 transition-all group flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/15 border border-indigo-400/30 flex items-center justify-center text-indigo-400 mb-3 group-hover:scale-110 transition-transform">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-indigo-400">
+                    Chord &amp; Scale Explorer
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                    Theory
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Diatonic modes, Sargam equivalents, progression loops, and Standard MIDI (.mid) file export.
+                </p>
+              </div>
+              <div className="mt-4 flex items-center text-xs text-indigo-400 font-bold gap-1 group-hover:translate-x-0.5 transition-transform">
+                <span>Explore theory</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+          </div>
         </div>
 
         {/* Recent Generations & Active Projects Grid */}

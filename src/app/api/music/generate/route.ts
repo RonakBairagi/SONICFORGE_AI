@@ -72,8 +72,8 @@ function buildAcousticFallbackPrompt(params: {
 
 export async function POST(req: NextRequest) {
   const controller = new AbortController();
-  // Server-side safety timeout: 45s to avoid unhandled hangs
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
+  // Server-side safety timeout: 90s to accommodate deep ElevenLabs music models without hanging indefinitely
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
 
   const startTime = Date.now();
 

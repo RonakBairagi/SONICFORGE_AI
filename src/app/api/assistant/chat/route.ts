@@ -188,7 +188,80 @@ Check the Diagnostics page for live connectivity tests, or visit Help & Support 
     };
   }
 
-  // 8. SonicForge Capabilities Summary
+  // 8. Harmonium & Indian Classical Sargam
+  if (
+    q.includes('harmonium') ||
+    q.includes('sargam') ||
+    q.includes('swara') ||
+    q.includes('sa re ga ma') ||
+    q.includes('komal') ||
+    q.includes('tivra')
+  ) {
+    return {
+      reply: `The Sonic Harmonium Studio (/harmonium) is a virtual reed instrument built with Web Audio & Tone.js:
+1. Indian Sargam Swaras: Features all 7 Shuddha notes (Sa, Re, Ga, Ma, Pa, Dha, Ni) and 5 Vikrit notes (Komal Re, Ga, Dha, Ni, and Tivra Ma).
+2. Selectable Tonic Sa: Change your root Sa to any key (e.g. C / Safed 1, C# / Kaali 1, D, etc.) and all Sargam labels will dynamically transpose while preserving exact acoustic pitches!
+3. Laptop Keyboard: Play directly on your keyboard using keys A, W, S, E, D, F, T, G, Y, H, U, J, K!
+4. Web MIDI: Connect any USB MIDI keyboard for latency-free physical playing.
+5. Acoustic Controls: Fine-tune bellow tremolo, master volume, and hall reverb.`,
+      suggestedPrompt: 'Indian classical fusion raga with virtuosic harmonium solo, tabla rhythm at 96 BPM, and ambient tanpura drone',
+    };
+  }
+
+  // 9. Instrument Tuning & SonicTune
+  if (
+    q.includes('tune') ||
+    q.includes('tuner') ||
+    q.includes('guitar') ||
+    q.includes('440') ||
+    q.includes('pitchy')
+  ) {
+    return {
+      reply: `SonicTune (/tuner) is a browser-based, sub-cent real-time instrument tuner:
+• Detection Algorithm: Utilizes pitch autocorrelation with clarity filtering, completely local without third-party network APIs.
+• Presets: Standard 6-String Guitar (E2-A2-D3-G3-B3-E4), Drop D, 4-String Bass, Ukulele, Violin, or Chromatic (any note).
+• Visual Feedback: Live cents needle gauge (-50 to +50 cents), color-coded flat/in-tune/sharp cues, and closest target string indicators.
+• Calibration: Configurable A4 reference frequency from 430 Hz to 450 Hz.
+• Test Tone Generator: Built-in 440 Hz reference sine wave for testing even without a microphone.`,
+    };
+  }
+
+  // 10. Indian Rhythm, Taal & Tanpura Drone
+  if (
+    q.includes('tabla') ||
+    q.includes('taal') ||
+    q.includes('teentaal') ||
+    q.includes('keherwa') ||
+    q.includes('rupak') ||
+    q.includes('tanpura') ||
+    q.includes('drone')
+  ) {
+    return {
+      reply: `The Sargam & Rhythm Studio (/practice) offers authentic Indian classical accompaniment:
+1. Tanpura Drone: Select your Sa root (C through B) and first string (Pa for standard, Ma for Madhyam ragas, Ni for Marwa). Generates rich jawari buzzing harmonics.
+2. Tabla Taal Cycles: Synthesized Dayan & Bayan bols with real-time beat counters and Sam/Taali/Khaali markers for Teentaal (16 beats), Keherwa (8 beats), Dadra (6 beats), Rupak (7 beats), and Jhaptal (10 beats).
+3. Guided Alankars: Interactive swara patterns (Aroha/Avaroha, Jod Swara, Trika) with synchronized audio playback and note highlighting.`,
+    };
+  }
+
+  // 11. Chord & Scale Theory Explorer
+  if (
+    q.includes('chord') ||
+    q.includes('scale') ||
+    q.includes('progression') ||
+    q.includes('midi') ||
+    q.includes('theory')
+  ) {
+    return {
+      reply: `The Chord & Scale Explorer (/chords) calculates harmonic relationships deterministically:
+• Modes & Thaats: Major (Bilawal), Minor (Asavari), Dorian (Kafi), Lydian (Kalyan), Mixolydian (Khamaj), Bhairav, Bhairavi, Pentatonic, and Blues.
+• Diatonic Chords: Instant breakdown of I, ii, iii, IV, V, vi, vii° triads and 7ths with strummed audio previews.
+• Progression Player: Instant auditioning of Pop Anthem (I-V-vi-IV), Doo-Wop (I-vi-IV-V), Emotional Minor, and Jazz (ii-V-I).
+• MIDI Export: Download any chord progression directly as a standard .mid file for your DAW!`,
+    };
+  }
+
+  // 12. SonicForge Capabilities Summary
   if (
     q.includes('capability') ||
     q.includes('capabilities') ||
@@ -198,15 +271,17 @@ Check the Diagnostics page for live connectivity tests, or visit Help & Support 
   ) {
     return {
       reply: `SonicForge AI is an all-in-one AI audio creation suite featuring:
-
-1. Music Studio: Generate complete instrumental tracks and full songs with AI-sung vocals.
-2. Custom Song Studio: Write original or AI-assisted lyrics, choose vocal delivery, language, mood, and tempo.
-3. SFX & Foley Studio: Generate game audio, cinematic braams, weather, and UI sounds via ElevenLabs Text-to-Sound v3.
-4. Sonic Assistant: Conversational audio copilot with Web Speech microphone input and Rime Coda voice synthesis.
-5. True Web Audio Waveforms: Real physical PCM sample peak decoding.
-6. Project Organization: Save tracks into project folders and download 44.1kHz MP3 files.
-7. Theme Support: Full Dark Obsidian and Crisp White Light themes.
-8. Official Customer Support: Email (ronakbairagi83@gmail.com) and phone hotline (+91 9051905871).`,
+• Music Studio & Custom Song: Full AI vocal tracks, lyrics synthesis, and instrumentals via ElevenLabs.
+• SFX Studio: Multi-take cinematic sound effects and foley.
+• SonicTune: Real-time microphone instrument tuner with guitar/bass/ukulele presets.
+• Sonic Harmonium: Playable Indian reed harmonium with dynamic Sargam transposition and MIDI.
+• Sargam & Rhythm Studio: Tanpura drone, Tabla taals (Teentaal, Keherwa, Rupak), and Alankars.
+• Vocal Pitch Coach: Live scrolling pitch contour and target note matching.
+• Sonic Loop Lab: Multi-track arranger with live recording, file import, and WAV mixdown export.
+• Chord & Scale Explorer: Diatonic modes, Sargam equivalents, progression loops, and MIDI export.
+• Stem Lab: Source separation architecture for vocal/instrument isolation.
+• Project Vault & Library: Persistent Firebase Cloud Firestore & Storage workspaces.
+• Official Customer Support: Email (${process.env.SUPPORT_EMAIL || 'support@sonicforge.ai'}) and phone desk.`,
     };
   }
 

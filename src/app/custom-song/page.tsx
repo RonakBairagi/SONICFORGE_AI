@@ -227,9 +227,10 @@ export default function CustomSongPage() {
     abortControllerRef.current = controller;
 
     // Safety timeout: 45s
+    // Safety timeout: abort client request after 90s so deep models finish without hanging indefinitely
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 45000);
+    }, 90000);
 
     try {
       // 3. Generating State

@@ -14,10 +14,14 @@ import {
   Activity,
   LayoutDashboard,
   LogOut,
-  ChevronRight,
   Phone,
   Sparkles,
   Mic2,
+  Radio,
+  Piano,
+  Layers,
+  BookOpen,
+  Disc3,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { SUPPORT_CONFIG } from '@/lib/support-config';
@@ -27,8 +31,15 @@ export const NAV_ITEMS = [
   { name: 'Music Studio', href: '/studio', icon: Music2, badge: 'Vocal AI' },
   { name: 'Custom Song', href: '/custom-song', icon: Mic2, badge: 'Lyrics' },
   { name: 'SFX Studio', href: '/sfx', icon: Volume2, badge: 'v3' },
+  { name: 'SonicTune Tuner', href: '/tuner', icon: Radio, badge: 'Pitch' },
+  { name: 'Sonic Harmonium', href: '/harmonium', icon: Piano, badge: 'Sargam' },
+  { name: 'Raga & Rhythm', href: '/practice', icon: Activity, badge: 'Taal' },
+  { name: 'Vocal Pitch Coach', href: '/vocal-coach', icon: Sparkles, badge: 'Live' },
+  { name: 'Sonic Loop Lab', href: '/loop-lab', icon: Layers, badge: 'Mixer' },
+  { name: 'Chord & Scale Explorer', href: '/chords', icon: BookOpen, badge: 'Theory' },
+  { name: 'Stem Lab', href: '/stems', icon: Disc3, badge: 'AI' },
+  { name: 'Projects Vault', href: '/projects', icon: FolderKanban },
   { name: 'My Library', href: '/library', icon: Library },
-  { name: 'Projects', href: '/projects', icon: FolderKanban },
   { name: 'Sonic Assistant', href: '/assistant', icon: BotMessageSquare, badge: 'Voice' },
   { name: 'Help & Support', href: '/support', icon: HelpCircle },
   { name: 'Diagnostics', href: '/diagnostics', icon: Activity },
@@ -44,9 +55,9 @@ export function Sidebar({ className = '' }: { className?: string }) {
       aria-label="Studio Sidebar Navigation"
       className={`w-64 shrink-0 bg-white dark:bg-midnight-950 border-r border-slate-200 dark:border-white/10 backdrop-blur-xl flex flex-col justify-between h-screen sticky top-0 transition-colors z-30 shadow-sm ${className}`}
     >
-      <div>
+      <div className="flex flex-col min-h-0 flex-1">
         {/* Brand Header */}
-        <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+        <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0">
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-studio-blue via-studio-violet to-cyan-400 p-0.5 shadow-lg shadow-studio-blue/20">
               <div className="w-full h-full bg-slate-900 dark:bg-midnight-950 rounded-[10px] flex items-center justify-center">
@@ -64,8 +75,8 @@ export function Sidebar({ className = '' }: { className?: string }) {
           </Link>
         </div>
 
-        {/* Navigation Links */}
-        <nav className="p-3 space-y-1">
+        {/* Scrollable Navigation Links */}
+        <nav className="p-3 space-y-1 overflow-y-auto flex-1 custom-scrollbar">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -73,24 +84,24 @@ export function Sidebar({ className = '' }: { className?: string }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-semibold transition-all group ${
+                className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all group ${
                   isActive
                     ? 'bg-gradient-to-r from-studio-blue/15 to-studio-violet/15 dark:from-studio-blue/25 dark:to-studio-violet/25 text-studio-blue dark:text-white border border-studio-blue/30 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-850/60'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <Icon
-                    className={`w-4 h-4 transition-colors ${
+                    className={`w-4 h-4 shrink-0 transition-colors ${
                       isActive
                         ? 'text-studio-blue dark:text-cyan-400'
                         : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300'
                     }`}
                   />
-                  <span>{item.name}</span>
+                  <span className="truncate">{item.name}</span>
                 </div>
                 {item.badge && (
-                  <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-full bg-studio-violet/15 border border-studio-violet/30 text-studio-violet dark:text-purple-300">
+                  <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-full bg-studio-violet/15 border border-studio-violet/30 text-studio-violet dark:text-purple-300 shrink-0">
                     {item.badge}
                   </span>
                 )}
@@ -101,24 +112,24 @@ export function Sidebar({ className = '' }: { className?: string }) {
       </div>
 
       {/* User Footer / Support Contact */}
-      <div className="p-3 border-t border-slate-200 dark:border-white/10 space-y-2">
+      <div className="p-3 border-t border-slate-200 dark:border-white/10 space-y-2 shrink-0">
         {/* Support Hotline pill */}
-        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-900 border border-slate-200/80 dark:border-white/5 text-[11px] space-y-1">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+        <div className="p-2 rounded-xl bg-slate-50 dark:bg-midnight-900 border border-slate-200/80 dark:border-white/5 text-[11px] space-y-0.5">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-[10px]">
             <span className="font-semibold">Support Desk</span>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           </div>
           <a
             href={`tel:${SUPPORT_CONFIG.supportPhone}`}
-            className="flex items-center gap-1.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+            className="flex items-center gap-1 font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:underline text-[10px]"
           >
-            <Phone className="w-3 h-3" />
+            <Phone className="w-2.5 h-2.5" />
             <span>{SUPPORT_CONFIG.supportPhoneDisplay}</span>
           </a>
         </div>
 
         {/* User Account / Guest */}
-        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-midnight-900 border border-slate-200/80 dark:border-white/5 flex items-center justify-between">
+        <div className="p-2 rounded-xl bg-slate-50 dark:bg-midnight-900 border border-slate-200/80 dark:border-white/5 flex items-center justify-between">
           <div className="min-w-0">
             <p className="text-xs font-bold text-slate-900 dark:text-slate-200 truncate">
               {profile?.displayName || user?.email?.split('@')[0] || 'Studio Guest'}
