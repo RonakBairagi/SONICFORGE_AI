@@ -15,11 +15,12 @@ import {
   Moon,
   Phone,
   Mic2,
+  Disc3,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { SUPPORT_CONFIG } from '@/lib/support-config';
-import { NAV_ITEMS } from './Sidebar';
+import { NAV_GROUPS, NAV_ITEMS } from './Sidebar';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -32,166 +33,169 @@ export function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 h-16 border-b border-slate-200 dark:border-white/10 bg-white/80 dark:bg-midnight-950/80 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between transition-colors shadow-sm">
+      <header className="sticky top-0 z-30 h-16 border-b border-plum-700/15 dark:border-white/10 bg-white/70 dark:bg-charcoal-900/65 backdrop-blur-2xl px-4 sm:px-6 flex items-center justify-between transition-colors shadow-sm">
         {/* Left: Mobile hamburger & section title */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="md:hidden p-2 rounded-xl text-slate-500 hover:text-charcoal-900 dark:text-lavender-300 dark:hover:text-white hover:bg-cream-100 dark:hover:bg-charcoal-800 transition-colors"
             aria-label="Toggle Navigation Menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
           <div className="flex items-center gap-2">
-            <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <span className="text-sm sm:text-base font-bold text-charcoal-900 dark:text-white flex items-center gap-2">
               {title}
             </span>
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-studio-blue/10 dark:bg-cyan-500/10 border border-studio-blue/20 dark:border-cyan-500/20 text-studio-blue dark:text-cyan-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-studio-blue dark:bg-cyan-400 animate-pulse" />
-              ElevenLabs Engine
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-champagne-400/10 border border-champagne-400/25 text-champagne-600 dark:text-champagne-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-champagne-400 animate-pulse" />
+              Studio Engine Active
             </span>
           </div>
         </div>
 
-        {/* Right: Actions, Theme Switcher, Support, Profile */}
+        {/* Right: Quick actions, Theme Switcher, Support, Profile */}
         <div className="flex items-center gap-2 sm:gap-2.5">
           {/* Quick Create Custom Song Action */}
           <Link
             href="/custom-song"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-studio-violet to-studio-blue text-white text-xs font-bold shadow-md shadow-studio-violet/20 hover:opacity-95 transition-all"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-plum-600 via-plum-700 to-champagne-600 hover:from-plum-500 hover:to-champagne-500 text-white text-xs font-bold shadow-md shadow-plum-950/20 hover:opacity-95 transition-all"
           >
-            <Mic2 className="w-3.5 h-3.5" />
+            <Mic2 className="w-3.5 h-3.5 text-champagne-300" />
             <span>Custom Song</span>
           </Link>
 
-          {/* Theme Toggle Button (Light / Dark) */}
+          {/* Quick Stem Lab Action */}
+          <Link
+            href="/stems"
+            className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-champagne-400/25 bg-champagne-400/10 text-xs font-semibold text-champagne-700 dark:text-champagne-300 hover:bg-champagne-400/20 transition-all"
+          >
+            <Disc3 className="w-3.5 h-3.5" />
+            <span>Stem Lab</span>
+          </Link>
+
+          {/* Theme Toggle Button */}
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-500 hover:text-charcoal-900 dark:text-lavender-300 dark:hover:text-champagne-400 hover:bg-cream-100 dark:hover:bg-charcoal-800 transition-colors"
             title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
             aria-label="Toggle Theme"
           >
             {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
+              <Sun className="w-4 h-4 text-champagne-400" />
             ) : (
-              <Moon className="w-4 h-4 text-studio-violet" />
+              <Moon className="w-4 h-4 text-plum-600" />
             )}
           </button>
 
           {/* Direct Support Phone Link */}
           <a
             href={`tel:${SUPPORT_CONFIG.supportPhone}`}
-            className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-champagne-600 dark:text-lavender-300 dark:hover:text-champagne-300 hover:bg-cream-100 dark:hover:bg-charcoal-800 transition-colors"
             title={`Call Support Hotline: ${SUPPORT_CONFIG.supportPhoneDisplay}`}
           >
-            <Phone className="w-3.5 h-3.5 text-emerald-500" />
-            <span className="font-mono">{SUPPORT_CONFIG.supportPhoneDisplay}</span>
+            <Phone className="w-3.5 h-3.5 text-champagne-500" />
+            <span className="font-mono text-[11px]">{SUPPORT_CONFIG.supportPhoneDisplay}</span>
           </a>
 
           <Link
             href="/diagnostics"
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-500 hover:text-charcoal-900 dark:text-lavender-300 dark:hover:text-champagne-400 hover:bg-cream-100 dark:hover:bg-charcoal-800 transition-colors"
             title="System Diagnostics"
           >
             <Activity className="w-4 h-4" />
           </Link>
 
           <Link
-            href="/support"
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Help Desk & Support"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </Link>
-
-          {/* User Avatar / Profile */}
-          <Link
             href="/settings"
-            className="p-1 rounded-xl hover:ring-2 hover:ring-studio-blue/40 transition-all ml-1"
-            title="Settings & Profile"
+            className="flex items-center gap-2 p-1.5 pl-2 sm:pr-2.5 rounded-xl bg-cream-100/60 dark:bg-charcoal-800/60 border border-slate-200/60 dark:border-white/5 hover:border-champagne-400/30 transition-all text-xs font-semibold text-charcoal-800 dark:text-lavender-200"
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-studio-blue to-studio-violet flex items-center justify-center text-white text-xs font-bold shadow-sm">
-              {user?.email ? user.email.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-plum-600 to-champagne-400 flex items-center justify-center text-charcoal-950 font-bold text-[10px]">
+              {user ? (user.email ? user.email.charAt(0).toUpperCase() : 'A') : 'G'}
             </div>
+            <span className="hidden sm:inline truncate max-w-[90px]">
+              {user ? (user.isAnonymous ? 'Guest' : (user.displayName || user.email?.split('@')[0])) : 'Account'}
+            </span>
           </Link>
         </div>
       </header>
 
-      {/* Mobile Drawer Navigation */}
+      {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-          onClick={() => setMobileMenuOpen(false)}
-        >
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop blur */}
           <div
-            className="w-72 max-w-[80vw] h-full bg-white dark:bg-midnight-950 p-5 space-y-4 shadow-2xl overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/10">
-              <div className="flex items-center gap-2">
-                <Music2 className="w-5 h-5 text-studio-blue dark:text-cyan-400" />
-                <span className="font-bold text-sm text-slate-900 dark:text-white">
-                  SONICFORGE STUDIO
-                </span>
-              </div>
-              <button
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            className="fixed inset-0 bg-charcoal-950/70 backdrop-blur-md transition-opacity"
+            onClick={() => setMobileMenuOpen(false)}
+          />
 
-            <nav className="space-y-1">
-              {NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                      isActive
-                        ? 'bg-studio-blue/10 dark:bg-studio-blue/20 text-studio-blue dark:text-cyan-300 font-bold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className="w-4 h-4" />
-                      <span>{item.name}</span>
-                    </div>
-                    {item.badge && (
-                      <span className="text-[9px] uppercase px-1.5 py-0.5 rounded-full bg-studio-violet/10 text-studio-violet dark:bg-studio-violet/20 dark:text-purple-300 font-bold">
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </nav>
-
-            <div className="pt-4 border-t border-slate-200 dark:border-white/10 space-y-2 text-xs">
-              <div className="flex items-center justify-between py-1">
-                <span className="text-slate-500 dark:text-slate-400 font-medium">Theme:</span>
+          {/* Drawer content */}
+          <div className="relative w-72 max-w-xs bg-white dark:bg-charcoal-900 h-full p-4 flex flex-col justify-between overflow-y-auto z-10 shadow-2xl border-r border-plum-700/20 dark:border-white/10">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-plum-700/15 dark:border-white/10 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-plum-600 to-champagne-400 flex items-center justify-center">
+                    <Music2 className="w-4 h-4 text-charcoal-950" />
+                  </div>
+                  <span className="font-extrabold text-sm text-charcoal-900 dark:text-white">
+                    SONICFORGE AI
+                  </span>
+                </div>
                 <button
-                  onClick={toggleTheme}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:bg-cream-100 dark:hover:bg-charcoal-800"
                 >
-                  {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-studio-violet" />}
-                  <span className="capitalize">{theme}</span>
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="py-2 text-[11px] text-slate-500 dark:text-slate-400">
-                <span>Support Hotline: </span>
-                <a
-                  href={`tel:${SUPPORT_CONFIG.supportPhone}`}
-                  className="font-mono font-bold text-emerald-600 dark:text-emerald-400 block mt-0.5"
+              <div className="space-y-4">
+                {NAV_GROUPS.map((group) => (
+                  <div key={group.title} className="space-y-1">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted">
+                      {group.title}
+                    </div>
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = pathname === item.href;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold ${
+                            isActive
+                              ? 'bg-plum-600/20 text-champagne-500 dark:text-champagne-300 border border-champagne-400/30'
+                              : 'text-slate-600 dark:text-lavender-200/70 hover:bg-cream-100 dark:hover:bg-charcoal-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className="w-4 h-4" />
+                            <span>{item.name}</span>
+                          </div>
+                          {item.badge && (
+                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-champagne-400/20 text-champagne-600 dark:text-champagne-300">
+                              {item.badge}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-plum-700/15 dark:border-white/10">
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span>Theme: {theme}</span>
+                <button
+                  onClick={toggleTheme}
+                  className="p-1.5 rounded-lg bg-cream-100 dark:bg-charcoal-800"
                 >
-                  {SUPPORT_CONFIG.supportPhoneDisplay}
-                </a>
+                  {theme === 'dark' ? <Sun className="w-4 h-4 text-champagne-400" /> : <Moon className="w-4 h-4 text-plum-600" />}
+                </button>
               </div>
             </div>
           </div>

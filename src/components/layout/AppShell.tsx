@@ -8,20 +8,22 @@ import { AnimatedBackground } from '../ui/AnimatedBackground';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-midnight-950 text-slate-900 dark:text-slate-100 flex flex-col md:flex-row antialiased selection:bg-studio-blue/30 selection:text-cyan-200 relative transition-colors duration-200">
-      {/* Background audio waves & particles */}
+    <div className="min-h-screen bg-cream-50/90 dark:bg-charcoal-950/85 text-charcoal-900 dark:text-lavender-50 flex flex-col md:flex-row antialiased selection:bg-champagne-400/30 selection:text-champagne-200 relative transition-colors duration-300">
+      {/* Cinematic Animated Background Layer */}
       <AnimatedBackground />
 
-      {/* Desktop Sidebar */}
-      <Sidebar className="hidden md:flex relative z-10" />
+      {/* Primary Studio Sidebar Navigation */}
+      <Sidebar className="hidden md:flex relative z-20" />
 
-      {/* Main Content Area */}
+      {/* Main Studio Viewport */}
       <div className="flex-1 flex flex-col min-w-0 pb-28 md:pb-24 relative z-10">
         <Navbar />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+          {children}
+        </main>
       </div>
 
-      {/* Global Docked Audio Player */}
+      {/* Master Docked Audio Player */}
       <div className="relative z-40">
         <AudioPlayer />
       </div>

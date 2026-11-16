@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 const API_BASE = 'https://api.neuralanalog.com';
 
 function getApiKey(): string {
@@ -45,34 +48,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    if (statusJson.is_complete) {
-      // For completed stems, extract stem artifacts
-      const stems = (statusJson.audio_stems || []).map((stem: { stem_id: string; stem_name?: string; label?: string; duration?: number }) => {
-        return {
-          id: stem.stem_id,
-          name: stem.stem_name || stem.label || 'Stem',
-          downloadUrl: `${API_BASE}/download/stem/${stem.stem_id}`,
-        };
-      });
-
-      return NextResponse.json({
-        isComplete: true,
-        isFailed: false,
-        progress: 100,
-        stems,
-        result: statusJson,
-      });
-    }
-
-    // In progress
     return NextResponse.json({
-      isComplete: false,
+      isComplete: Boolean(statusJson.is_complete),
       isFailed: false,
-      progress: statusJson.progress || 50,
-      status: 'processing',
+      status: statusJson.status || (statusJson.is_complete ? 'completed' : 'in_progress'),
+      statusDetails: statusJson.status_details || null,
+      audioId: statusJson.audio_id || null,
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Status polling error';
-    return NextResponse.json({ error: msg, code: 'INTERNAL_ERROR' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : 'Failed to query stem status';
+    return NextResponse.json({ error: msg, code: 'STATUS_EXCEPTION' }, { status: 500 });
   }
 }

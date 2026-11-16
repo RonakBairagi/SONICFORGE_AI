@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 const API_BASE = 'https://api.neuralanalog.com';
 
 function getApiKey(): string {
@@ -10,7 +13,10 @@ function getApiKey(): string {
   );
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     const stemId = params.id;
     if (!stemId) {
@@ -18,33 +24,43 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     const apiKey = getApiKey();
-    const response = await fetch(`${API_BASE}/download/stem/${stemId}`, {
+    // Request download from Neural Analog with manual redirect handling to capture S3 signed URL
+    const res = await fetch(`${API_BASE}/download/stem/${stemId}`, {
       headers: {
         'X-API-Key': apiKey,
       },
-      redirect: 'follow',
+      redirect: 'manual',
     });
 
-    if (!response.ok) {
+    // If Neural Analog returns 307 Redirect with signed S3 URL, redirect the client directly
+    if (res.status === 307 || res.status === 302 || res.status === 301) {
+      const location = res.headers.get('location');
+      if (location) {
+        return NextResponse.redirect(location, 307);
+      }
+    }
+
+    if (!res.ok) {
+      const errText = await res.text();
       return NextResponse.json(
-        { error: `Download failed with status ${response.status}` },
-        { status: response.status }
+        { error: `Download failed (${res.status}): ${errText}` },
+        { status: res.status }
       );
     }
 
-    const contentType = response.headers.get('content-type') || 'audio/wav';
-    const audioBytes = await response.arrayBuffer();
+    const blob = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'audio/wav';
 
-    return new Response(audioBytes, {
+    return new NextResponse(blob, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="stem_${stemId}.wav"`,
+        'Content-Disposition': `attachment; filename="stem_${stemId.slice(0, 8)}.wav"`,
         'Cache-Control': 'public, max-age=86400',
       },
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Stem download streaming error';
+    const msg = err instanceof Error ? err.message : 'Stem download proxy failed';
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

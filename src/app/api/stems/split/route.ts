@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 const API_BASE = 'https://api.neuralanalog.com';
 
 function getApiKey(): string {
@@ -16,14 +19,26 @@ export async function POST(req: NextRequest) {
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: 'Neural Analog API Key is not configured on the server. Please set AUDIO_SEPARATION_API_KEY in your environment.',
+          error: 'Neural Analog API Key is not configured. Please set AUDIO_SEPARATION_API_KEY.',
           code: 'MISSING_API_KEY',
         },
         { status: 500 }
       );
     }
 
-    const formData = await req.formData();
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch (parseErr) {
+      return NextResponse.json(
+        {
+          error: 'Failed to parse upload form data. If your file is over 4.5MB, serverless limits may apply. Consider using a compressed MP3 or the Public Music Link import.',
+          code: 'FORM_PARSE_ERROR',
+        },
+        { status: 400 }
+      );
+    }
+
     const file = formData.get('audio') as File | null;
     const preset = (formData.get('preset') as string) || '4_tracks';
 
@@ -51,7 +66,7 @@ export async function POST(req: NextRequest) {
       const errText = await uploadRes.text();
       return NextResponse.json(
         {
-          error: `Neural Analog audio ingestion failed (${uploadRes.status}): ${errText}`,
+          error: `Neural Analog audio ingestion rejected (${uploadRes.status}): ${errText}`,
           code: 'INGESTION_FAILED',
         },
         { status: uploadRes.status }
@@ -68,12 +83,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 2: Poll audio upload completion (usually ready in < 5 seconds)
+    // Step 2: Poll audio upload completion (usually ready in 1-3 seconds)
     let audioReady = false;
     let attempts = 0;
-    while (!audioReady && attempts < 15) {
+    while (!audioReady && attempts < 12) {
       attempts++;
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1200));
       const statusRes = await fetch(`${API_BASE}/status/audio/${audioId}`, {
         headers: { 'X-API-Key': apiKey },
       });

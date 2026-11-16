@@ -3,30 +3,36 @@
 @tailwind utilities;
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-border: rgba(0, 0, 0, 0.08);
-  --muted: #64748b;
-  --surface-hover: #f1f5f9;
+  --background: #fdfbf7;
+  --foreground: #1c1824;
+  --card: rgba(255, 255, 255, 0.78);
+  --card-border: rgba(138, 104, 168, 0.16);
+  --muted: #6e6478;
+  --surface-hover: rgba(247, 243, 235, 0.85);
+  --accent-gold: #d9a74a;
+  --accent-plum: #7c3ca3;
 }
 
 html.light {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-border: rgba(0, 0, 0, 0.08);
-  --muted: #64748b;
-  --surface-hover: #f1f5f9;
+  --background: #fdfbf7;
+  --foreground: #1c1824;
+  --card: rgba(255, 255, 255, 0.78);
+  --card-border: rgba(138, 104, 168, 0.16);
+  --muted: #6e6478;
+  --surface-hover: rgba(247, 243, 235, 0.85);
+  --accent-gold: #d9a74a;
+  --accent-plum: #7c3ca3;
 }
 
 html.dark {
-  --background: #07090e;
-  --foreground: #f8fafc;
-  --card: #0b0f19;
-  --card-border: rgba(255, 255, 255, 0.08);
-  --muted: #94a3b8;
-  --surface-hover: #151d30;
+  --background: #0b090e;
+  --foreground: #f4eff8;
+  --card: rgba(24, 20, 31, 0.65);
+  --card-border: rgba(232, 196, 117, 0.14);
+  --muted: #a59bb2;
+  --surface-hover: rgba(38, 16, 51, 0.45);
+  --accent-gold: #e8c475;
+  --accent-plum: #9953c4;
 }
 
 body {
@@ -58,15 +64,33 @@ body {
 
 /* Glass & Card Utilities */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(138, 104, 168, 0.16);
+  box-shadow: 0 10px 30px -5px rgba(38, 16, 51, 0.05);
 }
 
 html.dark .glass-panel {
-  background: rgba(11, 15, 25, 0.8);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  background: rgba(22, 16, 29, 0.62);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(232, 196, 117, 0.12);
+  box-shadow: 0 12px 40px -10px rgba(11, 9, 14, 0.6);
+}
+
+.glass-panel-elevated {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(217, 167, 74, 0.25);
+  box-shadow: 0 16px 40px -8px rgba(38, 16, 51, 0.08);
+}
+
+html.dark .glass-panel-elevated {
+  background: rgba(28, 18, 37, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(232, 196, 117, 0.2);
+  box-shadow: 0 20px 50px -12px rgba(11, 9, 14, 0.8);
 }

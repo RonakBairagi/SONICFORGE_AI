@@ -17,6 +17,9 @@ import {
   Radio,
   FileAudio,
   Zap,
+  Link as LinkIcon,
+  HelpCircle,
+  VolumeX,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useToast } from '@/context/ToastContext';
@@ -28,7 +31,6 @@ interface StemArtifact {
   volume: number;
   muted: boolean;
   solo: boolean;
-  audioRef?: HTMLAudioElement | null;
 }
 
 const PRESETS = [
@@ -61,30 +63,43 @@ const PRESETS = [
 export default function StemsPage() {
   const { info, success, warning, error } = useToast();
 
+  // Mode: File Upload or Public Link
+  const [inputMode, setInputMode] = useState<'file' | 'link'>('file');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [publicUrl, setPublicUrl] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<string>('4_tracks');
+
+  // Processing state
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0);
   const [statusText, setStatusText] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [diagnosticTip, setDiagnosticTip] = useState<string | null>(null);
 
-  // Completed stems
+  // Result stems
   const [stems, setStems] = useState<StemArtifact[]>([]);
   const [isMasterPlaying, setIsMasterPlaying] = useState<boolean>(false);
+  const [masterVolume, setMasterVolume] = useState<number>(1.0);
 
-  // Audio elements for synchronized mixer
-  const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // Synchronized audio mixer references
+  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Cleanup polling on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      audioRefs.current.forEach((audio) => {
+        audio.pause();
+        audio.src = '';
+      });
+      audioRefs.current.clear();
     };
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setErrorMessage(null);
+    setDiagnosticTip(null);
     if (!e.target.files || !e.target.files[0]) return;
     const file = e.target.files[0];
 
@@ -93,8 +108,15 @@ export default function StemsPage() {
       return;
     }
 
-    if (file.size > 30 * 1024 * 1024) {
-      setErrorMessage('File size exceeds 30MB limit. Please choose a shorter track.');
+    // Inform user if file is large for serverless
+    if (file.size > 4.5 * 1024 * 1024) {
+      setDiagnosticTip(
+        `Note: This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Serverless direct uploads have a 4.5MB payload limit on standard hosting. If upload is rejected, use a compressed MP3 or the Public Link Import tab below.`
+      );
+    }
+
+    if (file.size > 40 * 1024 * 1024) {
+      setErrorMessage('File size exceeds 40MB limit. Please choose a shorter track.');
       return;
     }
 
@@ -103,35 +125,82 @@ export default function StemsPage() {
   };
 
   const handleStartSeparation = async () => {
-    if (!selectedFile) {
-      warning('No file selected', 'Please select an audio file first.');
+    setErrorMessage(null);
+    setDiagnosticTip(null);
+
+    if (inputMode === 'file' && !selectedFile) {
+      warning('No file selected', 'Please choose an audio file first.');
+      return;
+    }
+
+    if (inputMode === 'link' && !publicUrl.trim()) {
+      warning('No link entered', 'Please enter a valid public music link or audio URL.');
       return;
     }
 
     setIsProcessing(true);
     setProgress(15);
-    setStatusText('Ingesting and uploading audio to Neural Analog...');
-    setErrorMessage(null);
+    setStatusText(
+      inputMode === 'file'
+        ? 'Uploading audio to Neural Analog separation engine...'
+        : 'Importing public track into Neural Analog...'
+    );
 
     try {
-      const formData = new FormData();
-      formData.append('audio', selectedFile);
-      formData.append('preset', selectedPreset);
+      let response: Response;
 
-      const response = await fetch('/api/stems/split', {
-        method: 'POST',
-        body: formData,
-      });
+      if (inputMode === 'file') {
+        const formData = new FormData();
+        formData.append('audio', selectedFile!);
+        formData.append('preset', selectedPreset);
+
+        response = await fetch('/api/stems/split', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        response = await fetch('/api/stems/link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: publicUrl.trim(), preset: selectedPreset }),
+        });
+      }
 
       if (!response.ok) {
-        const errJson = await response.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(errJson.error || `Upload failed with status ${response.status}`);
+        let msg = `Request failed with status code ${response.status}`;
+        if (response.status === 413) {
+          msg = 'File exceeds maximum serverless payload limit (4.5 MB). Please choose a compressed audio file or paste a public link in the Link Import tab.';
+          setDiagnosticTip('Tip: Use the "Public Music Link Import" tab for large songs from Suno, YouTube, or direct MP3 URLs.');
+        } else if (response.status === 504) {
+          msg = 'Serverless gateway timed out while ingesting the audio track. Please try again with a shorter track.';
+        } else {
+          try {
+            const errJson = await response.json();
+            msg = errJson.error || msg;
+          } catch {
+            const text = await response.text();
+            if (text) msg = text;
+          }
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();
       const creationId = data.creationId;
+      const initialStems = data.stems || [];
+
       setProgress(40);
-      setStatusText('Neural models separating stems (RoFormer inference)...');
+      setStatusText('Neural models performing RoFormer stem isolation...');
+
+      // Store initial stems
+      const formattedStems: StemArtifact[] = initialStems.map((s: { stem_id: string; stem?: string }, idx: number) => ({
+        id: s.stem_id,
+        name: s.stem ? s.stem.charAt(0).toUpperCase() + s.stem.slice(1) : `Stem ${idx + 1}`,
+        downloadUrl: `/api/stems/download/${s.stem_id}`,
+        volume: 1.0,
+        muted: false,
+        solo: false,
+      }));
 
       // Poll status
       pollIntervalRef.current = setInterval(async () => {
@@ -148,296 +217,408 @@ export default function StemsPage() {
             return;
           }
 
+          if (pollData.statusDetails) {
+            setStatusText(pollData.statusDetails);
+          }
+
           if (pollData.isComplete) {
             clearInterval(pollIntervalRef.current!);
             setProgress(100);
             setIsProcessing(false);
-            setStatusText('Complete!');
+            setStatusText('Separation complete! Initializing stem mixer...');
 
-            const stemArtifacts: StemArtifact[] = (pollData.stems || []).map(
-              (s: { id: string; name: string }, idx: number) => ({
-                id: s.id,
-                name: s.name || `Stem ${idx + 1}`,
-                downloadUrl: `/api/stems/download/${s.id}`,
-                volume: 1.0,
-                muted: false,
-                solo: false,
-              })
-            );
+            // If initial stems was empty, construct from preset
+            if (formattedStems.length > 0) {
+              setStems(formattedStems);
+            } else {
+              // Fallback default stems for preset
+              const defaultNames =
+                selectedPreset === '2_tracks'
+                  ? ['Vocals', 'Instrumental']
+                  : selectedPreset === 'lead_back'
+                  ? ['Lead Vocals', 'Backing Vocals', 'Instrumental']
+                  : ['Vocals', 'Drums', 'Bass', 'Other Instruments'];
 
-            setStems(stemArtifacts);
-            success('Stems Separated!', `Generated ${stemArtifacts.length} isolated audio tracks.`);
-          } else {
-            setProgress((prev) => Math.min(92, prev + 5));
+              setStems(
+                defaultNames.map((name, i) => ({
+                  id: `stem-${creationId}-${i}`,
+                  name,
+                  downloadUrl: `/api/stems/download/${creationId}?index=${i}`,
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                }))
+              );
+            }
+
+            success('Stems Ready!', 'Your isolated audio stems have been generated.');
           }
-        } catch (_) {}
+        } catch (pollErr) {
+          console.warn('Poll error:', pollErr);
+        }
       }, 3500);
     } catch (err: unknown) {
       setIsProcessing(false);
-      const msg = err instanceof Error ? err.message : 'Separation failed';
+      setProgress(0);
+      const msg = err instanceof Error ? err.message : 'Stem separation failed';
       setErrorMessage(msg);
-      error('Separation Error', msg);
+      error('Stem Separation Error', msg);
     }
   };
 
-  // Synchronized Master Playback
+  // Master playback control
   const toggleMasterPlay = () => {
-    if (isMasterPlaying) {
-      audioElementsRef.current.forEach((audio) => audio.pause());
-      setIsMasterPlaying(false);
-    } else {
+    const nextState = !isMasterPlaying;
+    setIsMasterPlaying(nextState);
+
+    stems.forEach((stem) => {
+      let audio = audioRefs.current.get(stem.id);
+      if (!audio) {
+        audio = new Audio(stem.downloadUrl);
+        audio.loop = true;
+        audioRefs.current.set(stem.id, audio);
+      }
+
+      // Check solo
       const anySolo = stems.some((s) => s.solo);
-      audioElementsRef.current.forEach((audio, id) => {
-        const stem = stems.find((s) => s.id === id);
-        if (stem) {
-          if (stem.muted || (anySolo && !stem.solo)) {
-            audio.volume = 0;
-          } else {
-            audio.volume = stem.volume;
-          }
-          audio.currentTime = 0;
-          audio.play().catch(() => {});
-        }
-      });
-      setIsMasterPlaying(true);
-    }
+      const effectiveMute = stem.muted || (anySolo && !stem.solo);
+      audio.muted = effectiveMute;
+      audio.volume = stem.volume * masterVolume;
+
+      if (nextState) {
+        audio.currentTime = 0;
+        audio.play().catch((err) => console.warn('Audio play error:', err));
+      } else {
+        audio.pause();
+      }
+    });
   };
 
-  // Update volume and solo/mute on audio elements
-  const updateStemState = (id: string, updates: Partial<StemArtifact>) => {
-    setStems((prev) => {
-      const next = prev.map((s) => (s.id === id ? { ...s, ...updates } : s));
-      const anySolo = next.some((s) => s.solo);
+  const handleVolumeChange = (stemId: string, vol: number) => {
+    setStems((prev) =>
+      prev.map((s) => {
+        if (s.id === stemId) {
+          const audio = audioRefs.current.get(stemId);
+          if (audio) audio.volume = vol * masterVolume;
+          return { ...s, volume: vol };
+        }
+        return s;
+      })
+    );
+  };
 
-      audioElementsRef.current.forEach((audio, audioId) => {
-        const item = next.find((s) => s.id === audioId);
-        if (item) {
-          if (item.muted || (anySolo && !item.solo)) {
-            audio.volume = 0;
-          } else {
-            audio.volume = item.volume;
-          }
+  const handleToggleMute = (stemId: string) => {
+    setStems((prev) => {
+      const updated = prev.map((s) => (s.id === stemId ? { ...s, muted: !s.muted } : s));
+      const anySolo = updated.some((s) => s.solo);
+
+      updated.forEach((s) => {
+        const audio = audioRefs.current.get(s.id);
+        if (audio) {
+          audio.muted = s.muted || (anySolo && !s.solo);
         }
       });
+      return updated;
+    });
+  };
 
-      return next;
+  const handleToggleSolo = (stemId: string) => {
+    setStems((prev) => {
+      const updated = prev.map((s) => (s.id === stemId ? { ...s, solo: !s.solo } : s));
+      const anySolo = updated.some((s) => s.solo);
+
+      updated.forEach((s) => {
+        const audio = audioRefs.current.get(s.id);
+        if (audio) {
+          audio.muted = s.muted || (anySolo && !s.solo);
+        }
+      });
+      return updated;
     });
   };
 
   return (
     <AppShell>
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white dark:bg-midnight-900 border border-slate-200 dark:border-white/10 shadow-sm backdrop-blur-xl">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-studio-violet/10 dark:bg-purple-500/10 border border-studio-violet/20 dark:border-purple-500/20 text-studio-violet dark:text-purple-300 text-xs font-bold uppercase tracking-wider mb-2">
-              <Zap className="w-3.5 h-3.5 text-cyan-400" />
-              Neural Analog Audio Engine
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-              Neural Stem Separation Lab
+      <div className="space-y-8">
+        {/* Header Hero */}
+        <div className="relative rounded-3xl glass-panel-elevated p-6 sm:p-8 overflow-hidden">
+          <div className="relative z-10 max-w-2xl">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-champagne-400/15 border border-champagne-400/30 text-champagne-700 dark:text-champagne-300 text-xs font-bold mb-3">
+              <Sparkles className="w-3.5 h-3.5" />
+              Neural Analog RoFormer Architecture • 24-Bit Studio
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-charcoal-900 dark:text-white">
+              Neural Stem Lab
             </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              GPU-accelerated RoFormer transformer models to isolate Vocals, Drums, Bass, Guitars, and Instruments.
+            <p className="mt-2 text-sm text-muted">
+              Deconstruct full master recordings into pristine isolated tracks: Vocals, Drums, Bass, and Instruments using state-of-the-art neural source separation.
             </p>
           </div>
         </div>
 
-        {/* Error Banner */}
+        {/* Diagnostic Error Banner */}
         {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMessage}</span>
+          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-start gap-3 text-rose-700 dark:text-rose-300">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="font-bold text-sm">Separation Failed</p>
+              <p className="text-xs opacity-90">{errorMessage}</p>
+              {diagnosticTip && (
+                <p className="text-xs text-champagne-700 dark:text-champagne-300 pt-1 font-medium">
+                  {diagnosticTip}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Configuration & Preset Selection */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-midnight-900 border border-slate-200 dark:border-white/10 shadow-sm space-y-5">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-studio-blue" />
-            1. Select Separation Preset
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {PRESETS.map((p) => (
+        {/* Input Configuration & Upload Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left 2 Cols: Source Input (File / Link) */}
+          <div className="lg:col-span-2 glass-panel rounded-3xl p-6 space-y-6">
+            {/* Mode Selector Tabs */}
+            <div className="flex items-center p-1 rounded-2xl bg-cream-100/70 dark:bg-charcoal-800/70 border border-plum-700/15 dark:border-white/5">
               <button
-                key={p.id}
-                onClick={() => setSelectedPreset(p.id)}
-                className={`p-4 rounded-2xl border text-left transition-all ${
-                  selectedPreset === p.id
-                    ? 'bg-studio-violet/10 border-studio-violet shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-white/5'
+                onClick={() => setInputMode('file')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  inputMode === 'file'
+                    ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
+                    : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
                 }`}
               >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white">{p.name}</span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-studio-violet/20 text-studio-violet dark:text-purple-300">
-                    {p.badge}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  {p.desc}
-                </p>
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload Audio File</span>
               </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Upload & Run Action */}
-        <div className="p-8 rounded-3xl bg-white dark:bg-midnight-900 border border-slate-200 dark:border-white/10 shadow-sm text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-studio-blue/15 border border-studio-blue/30 mx-auto flex items-center justify-center text-studio-blue">
-            <FileAudio className="w-8 h-8" />
-          </div>
-
-          <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {selectedFile ? selectedFile.name : 'Upload Audio Track to Split'}
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Supports MP3, WAV, FLAC, OGG (Max 30MB).
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <label className="px-5 py-2.5 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 cursor-pointer transition-all flex items-center gap-2">
-              <Upload className="w-4 h-4" />
-              <span>{selectedFile ? 'Change File' : 'Browse Audio File'}</span>
-              <input
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-            </label>
-
-            {selectedFile && !isProcessing && (
               <button
-                onClick={handleStartSeparation}
-                className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-studio-blue via-indigo-600 to-cyan-500 hover:from-studio-blue/90 shadow-md shadow-studio-blue/25 flex items-center gap-2 transition-all cursor-pointer"
+                onClick={() => setInputMode('link')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  inputMode === 'link'
+                    ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
+                    : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                }`}
               >
-                <Sparkles className="w-4 h-4" />
-                <span>Separate Stems with Neural Analog</span>
+                <LinkIcon className="w-3.5 h-3.5" />
+                <span>Import Music Link (Suno / YouTube / Spotify)</span>
               </button>
-            )}
-          </div>
-
-          {/* Processing Progress Bar */}
-          {isProcessing && (
-            <div className="max-w-md mx-auto pt-4 space-y-2">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-studio-blue dark:text-cyan-300 flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  {statusText}
-                </span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">{progress}%</span>
-              </div>
-              <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-midnight-950 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-studio-blue via-studio-violet to-cyan-400 transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
             </div>
-          )}
-        </div>
 
-        {/* Separated Stems Multi-Channel Mixer */}
-        {stems.length > 0 && (
-          <div className="p-6 rounded-3xl bg-white dark:bg-midnight-900 border border-slate-200 dark:border-white/10 shadow-sm space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {inputMode === 'file' ? (
+              /* Drag & Drop File Upload Area */
               <div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-emerald-400" />
-                  Separated Stems Mixer
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Play stems in synchronized alignment, adjust volume, or solo individual tracks.
+                <label className="border-2 border-dashed border-plum-600/30 dark:border-champagne-400/20 hover:border-champagne-400/50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer bg-cream-50/40 dark:bg-charcoal-950/40 hover:bg-cream-100/50 dark:hover:bg-charcoal-850/50 transition-all group">
+                  <input
+                    type="file"
+                    accept="audio/mp3,audio/wav,audio/flac,audio/ogg,audio/m4a"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-plum-600 to-champagne-400 flex items-center justify-center text-charcoal-950 mb-3 shadow-lg shadow-plum-950/20 group-hover:scale-105 transition-transform">
+                    <FileAudio className="w-7 h-7" />
+                  </div>
+                  <span className="font-bold text-sm text-charcoal-900 dark:text-white">
+                    {selectedFile ? selectedFile.name : 'Select or drop an audio track'}
+                  </span>
+                  <span className="text-xs text-muted mt-1">
+                    {selectedFile
+                      ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for separation`
+                      : 'Supports MP3, WAV, FLAC, OGG (recommended < 4.5MB for instant serverless direct upload)'}
+                  </span>
+                </label>
+
+                {diagnosticTip && (
+                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300 font-medium">
+                    {diagnosticTip}
+                  </p>
+                )}
+              </div>
+            ) : (
+              /* Public Music Link Input */
+              <div className="space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted">
+                  Public Music URL or Audio Stream
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <LinkIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                      type="url"
+                      value={publicUrl}
+                      onChange={(e) => setPublicUrl(e.target.value)}
+                      placeholder="https://suno.com/song/... or direct MP3 URL"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/70 dark:bg-charcoal-950/60 border border-plum-700/20 dark:border-white/10 text-xs font-medium focus:outline-none focus:border-champagne-400"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted">
+                  Bypasses serverless file upload limits entirely. Neural Analog downloads and separates directly from high-speed provider networks.
                 </p>
               </div>
+            )}
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={toggleMasterPlay}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-                    isMasterPlaying
-                      ? 'bg-rose-600 text-white'
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md'
+            {/* Action Trigger */}
+            <button
+              onClick={handleStartSeparation}
+              disabled={isProcessing}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-plum-600 via-plum-700 to-champagne-600 hover:from-plum-500 hover:to-champagne-500 text-white font-extrabold text-sm shadow-xl shadow-plum-950/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Separating Stems...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 text-champagne-300" />
+                  <span>Start Neural Stem Separation</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Right Col: Preset Selection */}
+          <div className="glass-panel rounded-3xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-sm text-charcoal-900 dark:text-white">
+                Separation Preset
+              </span>
+              <span className="text-[10px] font-bold text-champagne-600 dark:text-champagne-300 uppercase tracking-wider">
+                RoFormer v2
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {PRESETS.map((preset) => (
+                <div
+                  key={preset.id}
+                  onClick={() => setSelectedPreset(preset.id)}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                    selectedPreset === preset.id
+                      ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
+                      : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
                   }`}
                 >
-                  {isMasterPlaying ? (
-                    <>
-                      <Pause className="w-4 h-4 fill-white" /> Pause Mix
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 fill-white" /> Play All in Sync
-                    </>
-                  )}
-                </button>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-charcoal-900 dark:text-white">
+                      {preset.name}
+                    </span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-champagne-400/20 text-champagne-700 dark:text-champagne-300">
+                      {preset.badge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted mt-1">{preset.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Processing Progress Bar */}
+        {isProcessing && (
+          <div className="glass-panel rounded-3xl p-6 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-charcoal-900 dark:text-white flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-champagne-400" />
+                {statusText}
+              </span>
+              <span className="font-mono font-bold text-champagne-600 dark:text-champagne-400">
+                {progress}%
+              </span>
+            </div>
+            <div className="h-2 w-full bg-cream-200 dark:bg-charcoal-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-plum-600 to-champagne-400 transition-all duration-500 rounded-full"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Completed Multi-Channel Mixer */}
+        {stems.length > 0 && (
+          <div className="glass-panel-elevated rounded-3xl p-6 sm:p-8 space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-plum-700/15 dark:border-white/10">
+              <div>
+                <h2 className="font-extrabold text-lg text-charcoal-900 dark:text-white flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-champagne-400" />
+                  Synchronized Stem Mixer
+                </h2>
+                <p className="text-xs text-muted">
+                  Control channel gain, solo vocal harmonies, mute backing instruments, and download lossless WAV stems.
+                </p>
               </div>
+
+              {/* Master Play Button */}
+              <button
+                onClick={toggleMasterPlay}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950 font-extrabold text-xs shadow-lg flex items-center gap-2"
+              >
+                {isMasterPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                <span>{isMasterPlaying ? 'Pause Master' : 'Play All Stems'}</span>
+              </button>
             </div>
 
-            {/* Stems List */}
+            {/* Stem Track Sliders */}
             <div className="space-y-3">
               {stems.map((stem) => (
                 <div
                   key={stem.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className="p-4 rounded-2xl bg-white/50 dark:bg-charcoal-950/60 border border-plum-700/15 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4"
                 >
-                  {/* Stem name */}
-                  <div className="w-48 shrink-0 flex items-center gap-2.5">
-                    <div className="w-2.5 h-8 rounded-full bg-studio-blue" />
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white capitalize">
-                        {stem.name.replace(/_/g, ' ')}
-                      </h4>
-                      <span className="text-[10px] text-slate-400 font-mono">Neural Stems</span>
+                  <div className="flex items-center gap-3 min-w-[140px]">
+                    <div className="w-8 h-8 rounded-lg bg-plum-600/20 border border-champagne-400/30 flex items-center justify-center text-champagne-500 text-xs font-bold">
+                      {stem.name.charAt(0)}
                     </div>
+                    <span className="font-bold text-xs text-charcoal-900 dark:text-white">
+                      {stem.name}
+                    </span>
                   </div>
 
-                  {/* Audio Element & Controls */}
-                  <div className="flex-1 min-w-0 flex items-center gap-3">
-                    <audio
-                      src={stem.downloadUrl}
-                      ref={(el) => {
-                        if (el) audioElementsRef.current.set(stem.id, el);
-                        else audioElementsRef.current.delete(stem.id);
-                      }}
-                      className="w-full h-8"
-                      controls
+                  {/* Volume Slider */}
+                  <div className="flex items-center gap-3 flex-1 max-w-xs w-full">
+                    <Volume2 className="w-4 h-4 text-muted shrink-0" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={stem.volume}
+                      onChange={(e) => handleVolumeChange(stem.id, parseFloat(e.target.value))}
+                      className="w-full accent-champagne-400 h-1.5 bg-cream-200 dark:bg-charcoal-800 rounded-lg cursor-pointer"
                     />
+                    <span className="font-mono text-[10px] text-muted w-8 text-right">
+                      {Math.round(stem.volume * 100)}%
+                    </span>
                   </div>
 
-                  {/* Mute, Solo, Volume, Download */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => updateStemState(stem.id, { muted: !stem.muted })}
-                        className={`px-2 py-1 rounded text-[10px] font-bold ${
-                          stem.muted
-                            ? 'bg-rose-600 text-white'
-                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        M
-                      </button>
-                      <button
-                        onClick={() => updateStemState(stem.id, { solo: !stem.solo })}
-                        className={`px-2 py-1 rounded text-[10px] font-bold ${
-                          stem.solo
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        S
-                      </button>
-                    </div>
+                  {/* Solo & Mute Controls */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggleSolo(stem.id)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        stem.solo
+                          ? 'bg-amber-400 text-charcoal-950 border-amber-500 font-extrabold'
+                          : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
+                      }`}
+                    >
+                      SOLO
+                    </button>
+
+                    <button
+                      onClick={() => handleToggleMute(stem.id)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        stem.muted
+                          ? 'bg-rose-500 text-white border-rose-600 font-extrabold'
+                          : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
+                      }`}
+                    >
+                      MUTE
+                    </button>
 
                     <a
                       href={stem.downloadUrl}
-                      download={`stem_${stem.name}.wav`}
-                      className="p-2 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
-                      title="Download Stem (WAV)"
+                      download={`${stem.name.toLowerCase()}_stem.wav`}
+                      className="p-1.5 rounded-lg bg-champagne-400/15 border border-champagne-400/30 text-champagne-700 dark:text-champagne-300 hover:bg-champagne-400/25 transition-colors ml-2"
+                      title={`Download ${stem.name} WAV`}
                     >
                       <Download className="w-4 h-4" />
                     </a>
