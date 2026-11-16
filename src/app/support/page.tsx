@@ -98,6 +98,24 @@ const KNOWLEDGE_BASE: HelpArticle[] = [
     content:
       'When audio is loaded, the client uses the native Web Audio API (AudioContext.decodeAudioData) to decode the binary audio stream into raw PCM Float32 samples. It groups the channel samples into 48 discrete time windows, calculates root-mean-square amplitude, and renders actual physical audio peaks onto the waveform visualizer.',
   },
+  {
+    id: 'kb-stem-separation',
+    category: 'Stem Lab',
+    title: 'Neural Analog Stem Separation: Isolating Vocals, Drums & Bass',
+    summary:
+      'Learn how to use GPU-accelerated RoFormer transformer models to split mixed audio into isolated stems.',
+    content:
+      'The Stem Lab (/stems) integrates with Neural Analog GPU infrastructure. Select your preset (4 Stems, 2 Stems Acapella/Instrumental, or 6 Stems Full Band), upload an MP3/WAV file up to 30MB, and click Separate Stems. You can play all stems in synchronized alignment, adjust per-track volume, solo/mute channels, and download individual 24-bit studio WAV stems.',
+  },
+  {
+    id: 'kb-google-auth-domain',
+    category: 'Authentication',
+    title: 'Resolving Firebase "auth/unauthorized-domain" on Google Sign-In',
+    summary:
+      'Why Google Sign-In requires your custom Vercel or live domain to be authorized in Firebase Console.',
+    content:
+      'Firebase Authentication protects your app by rejecting OAuth sign-ins from unapproved web domains. If you deploy to a new Vercel preview or production domain, visit your Firebase Console -> Authentication -> Settings -> Authorized Domains and click "Add Domain" to include your live hostname (e.g. sonicforge.ai or *.vercel.app). Alternatively, you can always sign in instantly with Email & Password or explore the studio as a Guest without domain restriction.',
+  },
 ];
 
 export default function SupportPage() {

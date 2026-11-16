@@ -123,11 +123,15 @@ export function AnimatedBackground() {
   }, [theme]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0 opacity-80 transition-opacity duration-500"
-      aria-hidden="true"
-    />
+    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
+      {/* Studio Ambient Glow Lights */}
+      <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full bg-studio-blue/10 dark:bg-studio-blue/15 blur-[120px]" />
+      <div className="absolute bottom-1/3 -right-32 w-96 h-96 rounded-full bg-studio-violet/10 dark:bg-studio-violet/15 blur-[120px]" />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full opacity-80 transition-opacity duration-500"
+      />
+    </div>
   );
 }
 

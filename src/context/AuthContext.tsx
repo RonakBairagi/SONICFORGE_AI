@@ -7,6 +7,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as fbSignOut,
   sendPasswordResetEmail,
   updateProfile,
@@ -20,6 +22,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithGoogleRedirect: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, name?: string) => Promise<void>;
   sendResetEmail: (email: string) => Promise<void>;
@@ -39,6 +42,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
+
+    // Check if returning from a redirect authentication flow
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result && result.user) {
+          try {
+            let userProf = await getUserProfile(result.user.uid);
+            if (!userProf) {
+              userProf = {
+                uid: result.user.uid,
+                email: result.user.email,
+                displayName: result.user.displayName || 'Producer',
+                photoURL: result.user.photoURL,
+                createdAt: Date.now(),
+                lastLoginAt: Date.now(),
+                providerId: 'google.com',
+              };
+              await saveUserProfile(userProf);
+            }
+            setProfile(userProf);
+          } catch (e) {
+            console.warn('Profile sync notice on redirect:', e);
+          }
+        }
+      })
+      .catch((e) => {
+        console.warn('Redirect auth check notice:', e);
+      });
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -82,20 +113,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     if (!auth || !googleProvider) throw new Error('Firebase Auth is not initialized');
-    const result = await signInWithPopup(auth, googleProvider);
-    if (result.user) {
-      const p: UserProfile = {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName || 'Producer',
-        photoURL: result.user.photoURL,
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-        providerId: 'google.com',
-      };
-      await saveUserProfile(p);
-      setProfile(p);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result.user) {
+        const p: UserProfile = {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName || 'Producer',
+          photoURL: result.user.photoURL,
+          createdAt: Date.now(),
+          lastLoginAt: Date.now(),
+          providerId: 'google.com',
+        };
+        await saveUserProfile(p);
+        setProfile(p);
+      }
+    } catch (err: unknown) {
+      const fbErr = err as { code?: string; message?: string };
+      // If popup is blocked by browser, automatically fall back to redirect
+      if (fbErr?.code === 'auth/popup-blocked' || fbErr?.code === 'auth/popup-closed-by-user') {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+      throw err;
     }
+  };
+
+  const signInWithGoogleRedirect = async () => {
+    if (!auth || !googleProvider) throw new Error('Firebase Auth is not initialized');
+    await signInWithRedirect(auth, googleProvider);
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
@@ -142,6 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         loading,
         signInWithGoogle,
+        signInWithGoogleRedirect,
         loginWithEmail,
         registerWithEmail,
         sendResetEmail,
@@ -161,4 +208,3 @@ export function useAuth() {
   }
   return context;
 }
-
