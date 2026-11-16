@@ -20,9 +20,13 @@ import {
   Link as LinkIcon,
   HelpCircle,
   VolumeX,
+  Clock,
+  RefreshCw,
+  XCircle,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useToast } from '@/context/ToastContext';
+import { audioBufferToWav } from '@/lib/wav-encoder';
 
 interface StemArtifact {
   id: string;
@@ -60,6 +64,8 @@ const PRESETS = [
   },
 ];
 
+const LOCAL_STORAGE_KEY = 'sonicforge_stem_job';
+
 export default function StemsPage() {
   const { info, success, warning, error } = useToast();
 
@@ -69,12 +75,20 @@ export default function StemsPage() {
   const [publicUrl, setPublicUrl] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<string>('4_tracks');
 
-  // Processing state
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [progress, setProgress] = useState<number>(0);
-  const [statusText, setStatusText] = useState<string>('');
+  // Multi-stage processing state
+  // 'idle' | 'uploading' | 'ingesting' | 'ready_to_split' | 'queue' | 'processing' | 'completed' | 'failed'
+  const [pipelineStage, setPipelineStage] = useState<string>('idle');
+  const [statusDetails, setStatusDetails] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [diagnosticTip, setDiagnosticTip] = useState<string | null>(null);
+
+  // Ingested audio asset
+  const [audioId, setAudioId] = useState<string | null>(null);
+  const [trackTitle, setTrackTitle] = useState<string>('');
+
+  // Stem job tracking
+  const [creationId, setCreationId] = useState<string | null>(null);
+  const [queueStartTime, setQueueStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
   // Result stems
   const [stems, setStems] = useState<StemArtifact[]>([]);
@@ -83,12 +97,38 @@ export default function StemsPage() {
 
   // Synchronized audio mixer references
   const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const elapsedTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Cleanup on unmount
+  // Restore saved job from localStorage on mount
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved) {
+        const job = JSON.parse(saved);
+        if (job.creationId && job.stems) {
+          setCreationId(job.creationId);
+          setAudioId(job.audioId || null);
+          setTrackTitle(job.trackTitle || 'Recovered Project');
+          setSelectedPreset(job.preset || '4_tracks');
+
+          if (job.isComplete) {
+            setPipelineStage('completed');
+            setStems(job.stems);
+          } else {
+            setPipelineStage('queue');
+            setQueueStartTime(job.startTime || Date.now());
+            startStemPolling(job.creationId, job.stems);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to restore job from localStorage:', e);
+    }
+
     return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
       audioRefs.current.forEach((audio) => {
         audio.pause();
         audio.src = '';
@@ -97,9 +137,48 @@ export default function StemsPage() {
     };
   }, []);
 
+  // Elapsed timer tracking
+  useEffect(() => {
+    if (pipelineStage === 'queue' || pipelineStage === 'processing') {
+      elapsedTimerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    }
+    return () => {
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    };
+  }, [pipelineStage]);
+
+  // Client-side audio optimizer for files > 4.2 MB
+  const optimizeAudioIfNeeded = async (file: File): Promise<File> => {
+    if (file.size <= 4.2 * 1024 * 1024) {
+      return file;
+    }
+
+    setStatusDetails(`Optimizing ${(file.size / (1024 * 1024)).toFixed(1)} MB audio to meet serverless limits...`);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+      // Downmix or resample into 16-bit PCM WAV using audioBufferToWav
+      const wavBlob = audioBufferToWav(decodedBuffer);
+      audioCtx.close();
+
+      return new File([wavBlob], file.name.replace(/\.[^.]+$/, '') + '.wav', {
+        type: 'audio/wav',
+      });
+    } catch (err) {
+      console.warn('Client audio compression fallback to original file:', err);
+      return file;
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setErrorMessage(null);
-    setDiagnosticTip(null);
     if (!e.target.files || !e.target.files[0]) return;
     const file = e.target.files[0];
 
@@ -108,162 +187,271 @@ export default function StemsPage() {
       return;
     }
 
-    // Inform user if file is large for serverless
-    if (file.size > 4.5 * 1024 * 1024) {
-      setDiagnosticTip(
-        `Note: This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Serverless direct uploads have a 4.5MB payload limit on standard hosting. If upload is rejected, use a compressed MP3 or the Public Link Import tab below.`
-      );
-    }
-
-    if (file.size > 40 * 1024 * 1024) {
-      setErrorMessage('File size exceeds 40MB limit. Please choose a shorter track.');
+    if (file.size > 50 * 1024 * 1024) {
+      setErrorMessage('File size exceeds 50MB limit. Please select a shorter track.');
       return;
     }
 
     setSelectedFile(file);
+    setTrackTitle(file.name);
+    setAudioId(null);
+    setPipelineStage('idle');
     info('Audio File Loaded', `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
   };
 
-  const handleStartSeparation = async () => {
+  // Stage 1: Ingest Audio Asset (File or Link)
+  const handleIngestAudio = async () => {
     setErrorMessage(null);
-    setDiagnosticTip(null);
 
     if (inputMode === 'file' && !selectedFile) {
-      warning('No file selected', 'Please choose an audio file first.');
+      warning('No file selected', 'Please select an audio file first.');
       return;
     }
-
     if (inputMode === 'link' && !publicUrl.trim()) {
-      warning('No link entered', 'Please enter a valid public music link or audio URL.');
+      warning('No link entered', 'Please enter a valid Suno, YouTube, or Spotify link.');
       return;
     }
 
-    setIsProcessing(true);
-    setProgress(15);
-    setStatusText(
-      inputMode === 'file'
-        ? 'Uploading audio to Neural Analog separation engine...'
-        : 'Importing public track into Neural Analog...'
-    );
+    setPipelineStage('uploading');
+    setStatusDetails(inputMode === 'file' ? 'Uploading audio file...' : 'Connecting to music source...');
 
     try {
-      let response: Response;
+      let audioAssetId: string;
 
       if (inputMode === 'file') {
-        const formData = new FormData();
-        formData.append('audio', selectedFile!);
-        formData.append('preset', selectedPreset);
+        const fileToUpload = await optimizeAudioIfNeeded(selectedFile!);
+        setStatusDetails('Streaming audio to Neural Analog ingestion gateway...');
 
-        response = await fetch('/api/stems/split', {
+        const formData = new FormData();
+        formData.append('audio', fileToUpload);
+
+        const res = await fetch('/api/stems/split', {
           method: 'POST',
           body: formData,
         });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: `Upload error (${res.status})` }));
+          throw new Error(errData.error || `Upload failed with status ${res.status}`);
+        }
+
+        const data = await res.json();
+        audioAssetId = data.audioId;
       } else {
-        response = await fetch('/api/stems/link', {
+        setStatusDetails('Importing track from public source into Neural Analog...');
+        const res = await fetch('/api/stems/link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: publicUrl.trim(), preset: selectedPreset }),
+          body: JSON.stringify({ url: publicUrl.trim() }),
         });
-      }
 
-      if (!response.ok) {
-        let msg = `Request failed with status code ${response.status}`;
-        if (response.status === 413) {
-          msg = 'File exceeds maximum serverless payload limit (4.5 MB). Please choose a compressed audio file or paste a public link in the Link Import tab.';
-          setDiagnosticTip('Tip: Use the "Public Music Link Import" tab for large songs from Suno, YouTube, or direct MP3 URLs.');
-        } else if (response.status === 504) {
-          msg = 'Serverless gateway timed out while ingesting the audio track. Please try again with a shorter track.';
-        } else {
-          try {
-            const errJson = await response.json();
-            msg = errJson.error || msg;
-          } catch {
-            const text = await response.text();
-            if (text) msg = text;
-          }
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: `Import error (${res.status})` }));
+          throw new Error(errData.error || `Import failed with status ${res.status}`);
         }
-        throw new Error(msg);
+
+        const data = await res.json();
+        audioAssetId = data.audioId;
+        setTrackTitle(publicUrl.trim());
       }
 
-      const data = await response.json();
-      const creationId = data.creationId;
-      const initialStems = data.stems || [];
+      setAudioId(audioAssetId);
+      setPipelineStage('ingesting');
+      setStatusDetails('Verifying audio readiness on Neural Analog...');
 
-      setProgress(40);
-      setStatusText('Neural models performing RoFormer stem isolation...');
-
-      // Store initial stems
-      const formattedStems: StemArtifact[] = initialStems.map((s: { stem_id: string; stem?: string }, idx: number) => ({
-        id: s.stem_id,
-        name: s.stem ? s.stem.charAt(0).toUpperCase() + s.stem.slice(1) : `Stem ${idx + 1}`,
-        downloadUrl: `/api/stems/download/${s.stem_id}`,
-        volume: 1.0,
-        muted: false,
-        solo: false,
-      }));
-
-      // Poll status
-      pollIntervalRef.current = setInterval(async () => {
+      // Poll audio status until complete
+      let attempts = 0;
+      const pollAudioInterval = setInterval(async () => {
+        attempts++;
         try {
-          const pollRes = await fetch(`/api/stems/status?creationId=${creationId}`);
-          if (!pollRes.ok) return;
+          const statusRes = await fetch(`/api/stems/audio-status?audioId=${audioAssetId}`);
+          if (!statusRes.ok) return;
 
-          const pollData = await pollRes.json();
-          if (pollData.isFailed) {
-            clearInterval(pollIntervalRef.current!);
-            setIsProcessing(false);
-            setErrorMessage(pollData.errorMessage || 'Stem separation failed on provider.');
-            error('Separation Failed', pollData.errorMessage);
+          const statusData = await statusRes.json();
+          if (statusData.isFailed) {
+            clearInterval(pollAudioInterval);
+            setPipelineStage('failed');
+            setErrorMessage(statusData.errorMessage || 'Audio file analysis rejected by provider.');
+            error('Ingestion Failed', statusData.errorMessage);
             return;
           }
 
-          if (pollData.statusDetails) {
-            setStatusText(pollData.statusDetails);
+          if (statusData.isComplete) {
+            clearInterval(pollAudioInterval);
+            setPipelineStage('ready_to_split');
+            setStatusDetails('Audio asset ready. Choose separation preset and begin.');
+            success('Audio Ready', 'Track imported successfully.');
+          } else if (attempts > 20) {
+            clearInterval(pollAudioInterval);
+            setPipelineStage('failed');
+            setErrorMessage('Audio ingestion timed out. Please try again.');
           }
-
-          if (pollData.isComplete) {
-            clearInterval(pollIntervalRef.current!);
-            setProgress(100);
-            setIsProcessing(false);
-            setStatusText('Separation complete! Initializing stem mixer...');
-
-            // If initial stems was empty, construct from preset
-            if (formattedStems.length > 0) {
-              setStems(formattedStems);
-            } else {
-              // Fallback default stems for preset
-              const defaultNames =
-                selectedPreset === '2_tracks'
-                  ? ['Vocals', 'Instrumental']
-                  : selectedPreset === 'lead_back'
-                  ? ['Lead Vocals', 'Backing Vocals', 'Instrumental']
-                  : ['Vocals', 'Drums', 'Bass', 'Other Instruments'];
-
-              setStems(
-                defaultNames.map((name, i) => ({
-                  id: `stem-${creationId}-${i}`,
-                  name,
-                  downloadUrl: `/api/stems/download/${creationId}?index=${i}`,
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                }))
-              );
-            }
-
-            success('Stems Ready!', 'Your isolated audio stems have been generated.');
-          }
-        } catch (pollErr) {
-          console.warn('Poll error:', pollErr);
+        } catch (e) {
+          console.warn('Audio status check error:', e);
         }
-      }, 3500);
+      }, 1500);
     } catch (err: unknown) {
-      setIsProcessing(false);
-      setProgress(0);
+      setPipelineStage('failed');
+      const msg = err instanceof Error ? err.message : 'Audio upload failed';
+      setErrorMessage(msg);
+      error('Upload Failed', msg);
+    }
+  };
+
+  // Stage 2: Trigger Stem Separation
+  const handleStartStemSeparation = async () => {
+    if (!audioId) {
+      warning('Audio not ready', 'Please import or upload an audio track first.');
+      return;
+    }
+
+    setPipelineStage('queue');
+    setElapsedSeconds(0);
+    setStatusDetails('Submitting stem separation job to Neural Analog hardware queue...');
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch('/api/stems/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioId, preset: selectedPreset }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({ error: `Failed with status ${res.status}` }));
+        throw new Error(errJson.error || 'Failed to start separation');
+      }
+
+      const data = await res.json();
+      const newCreationId = data.creationId;
+      setCreationId(newCreationId);
+
+      const formattedStems: StemArtifact[] = (data.stems || []).map(
+        (s: { stem_id: string; stem?: string }, idx: number) => ({
+          id: s.stem_id,
+          name: s.stem ? s.stem.charAt(0).toUpperCase() + s.stem.slice(1) : `Stem ${idx + 1}`,
+          downloadUrl: `/api/stems/download/${s.stem_id}`,
+          volume: 1.0,
+          muted: false,
+          solo: false,
+        })
+      );
+
+      // Persist in localStorage so page refresh doesn't lose job
+      const jobRecord = {
+        creationId: newCreationId,
+        audioId,
+        trackTitle,
+        preset: selectedPreset,
+        stems: formattedStems,
+        startTime: Date.now(),
+        isComplete: false,
+      };
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(jobRecord));
+
+      startStemPolling(newCreationId, formattedStems);
+    } catch (err: unknown) {
+      setPipelineStage('failed');
       const msg = err instanceof Error ? err.message : 'Stem separation failed';
       setErrorMessage(msg);
-      error('Stem Separation Error', msg);
+      error('Separation Error', msg);
     }
+  };
+
+  // Intelligent polling with gradual backoff
+  const startStemPolling = (jobId: string, currentStems: StemArtifact[]) => {
+    let delay = 3000;
+    let pollCount = 0;
+
+    const poll = async () => {
+      pollCount++;
+      try {
+        const res = await fetch(`/api/stems/status?creationId=${jobId}`);
+        if (!res.ok) {
+          scheduleNext(delay);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.isFailed) {
+          setPipelineStage('failed');
+          setErrorMessage(data.errorMessage || 'Stem separation failed on provider.');
+          error('Job Failed', data.errorMessage);
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          return;
+        }
+
+        if (data.statusDetails) {
+          setStatusDetails(data.statusDetails);
+          if (data.statusDetails.includes('queue')) {
+            setPipelineStage('queue');
+          } else {
+            setPipelineStage('processing');
+          }
+        }
+
+        if (data.isComplete) {
+          setPipelineStage('completed');
+          setStatusDetails('Separation complete! Lossless stems ready.');
+          setStems(currentStems);
+
+          // Update storage with completed status
+          const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            parsed.isComplete = true;
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+          }
+
+          success('Stems Ready!', 'Your isolated audio stems have finished processing.');
+          return;
+        }
+
+        // Increase polling interval gradually up to 10s to respect rate limits
+        if (pollCount > 5) delay = 5000;
+        if (pollCount > 15) delay = 8000;
+        if (pollCount > 30) delay = 10000;
+
+        scheduleNext(delay);
+      } catch (err) {
+        console.warn('Poll status error:', err);
+        scheduleNext(delay);
+      }
+    };
+
+    const scheduleNext = (ms: number) => {
+      pollTimerRef.current = setTimeout(poll, ms);
+    };
+
+    scheduleNext(1500);
+  };
+
+  const handleManualRefresh = async () => {
+    if (!creationId) return;
+    info('Checking Status', 'Querying Neural Analog processing queue...');
+    try {
+      const res = await fetch(`/api/stems/status?creationId=${creationId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.statusDetails) setStatusDetails(data.statusDetails);
+        if (data.isComplete) {
+          setPipelineStage('completed');
+          success('Completed!', 'Stem separation finished.');
+        }
+      }
+    } catch (e) {
+      console.warn('Manual refresh error:', e);
+    }
+  };
+
+  const handleCancelTracking = () => {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    setPipelineStage('idle');
+    setCreationId(null);
+    setAudioId(null);
+    info('Job Dismissed', 'Stopped tracking current stem job.');
   };
 
   // Master playback control
@@ -279,7 +467,6 @@ export default function StemsPage() {
         audioRefs.current.set(stem.id, audio);
       }
 
-      // Check solo
       const anySolo = stems.some((s) => s.solo);
       const effectiveMute = stem.muted || (anySolo && !stem.solo);
       audio.muted = effectiveMute;
@@ -337,6 +524,12 @@ export default function StemsPage() {
     });
   };
 
+  const formatElapsed = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${mins}:${s < 10 ? '0' : ''}${s}`;
+  };
+
   return (
     <AppShell>
       <div className="space-y-8">
@@ -345,37 +538,88 @@ export default function StemsPage() {
           <div className="relative z-10 max-w-2xl">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-champagne-400/15 border border-champagne-400/30 text-champagne-700 dark:text-champagne-300 text-xs font-bold mb-3">
               <Sparkles className="w-3.5 h-3.5" />
-              Neural Analog RoFormer Architecture • 24-Bit Studio
+              Neural Analog RoFormer Architecture • Asynchronous Studio
             </span>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-charcoal-900 dark:text-white">
               Neural Stem Lab
             </h1>
             <p className="mt-2 text-sm text-muted">
-              Deconstruct full master recordings into pristine isolated tracks: Vocals, Drums, Bass, and Instruments using state-of-the-art neural source separation.
+              Deconstruct full master recordings into isolated stems: Vocals, Drums, Bass, and Instruments using state-of-the-art neural source separation.
             </p>
           </div>
         </div>
 
-        {/* Diagnostic Error Banner */}
+        {/* Error Alert Banner */}
         {errorMessage && (
           <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-start gap-3 text-rose-700 dark:text-rose-300">
             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="flex-1 space-y-1">
-              <p className="font-bold text-sm">Separation Failed</p>
+              <p className="font-bold text-sm">Action Failed</p>
               <p className="text-xs opacity-90">{errorMessage}</p>
-              {diagnosticTip && (
-                <p className="text-xs text-champagne-700 dark:text-champagne-300 pt-1 font-medium">
-                  {diagnosticTip}
+            </div>
+          </div>
+        )}
+
+        {/* Active Queue / Hardware Status Banner */}
+        {(pipelineStage === 'queue' || pipelineStage === 'processing') && (
+          <div className="p-5 rounded-2xl glass-panel-elevated border-champagne-400/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-champagne-400/20 border border-champagne-400/40 flex items-center justify-center text-champagne-600 dark:text-champagne-300 shrink-0">
+                <Loader2 className="w-5 h-5 animate-spin" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-charcoal-900 dark:text-white">
+                    {pipelineStage === 'queue' ? 'Waiting in Hardware Queue' : 'Neural Separation in Progress'}
+                  </span>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cream-200 dark:bg-charcoal-800 text-muted">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    {formatElapsed(elapsedSeconds)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted">
+                  {statusDetails || 'Allocating GPU workers on Neural Analog cluster...'}
                 </p>
-              )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleManualRefresh}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl glass-panel text-xs font-bold text-charcoal-800 dark:text-lavender-200 hover:border-champagne-400/40 flex items-center justify-center gap-1.5"
+                title="Query latest job status"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Check Status</span>
+              </button>
+              <button
+                onClick={handleCancelTracking}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 flex items-center justify-center gap-1.5"
+                title="Stop polling this job"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                <span>Cancel</span>
+              </button>
             </div>
           </div>
         )}
 
         {/* Input Configuration & Upload Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left 2 Cols: Source Input (File / Link) */}
+          {/* Left 2 Cols: Step 1 (Ingest Track) */}
           <div className="lg:col-span-2 glass-panel rounded-3xl p-6 space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-plum-700/15 dark:border-white/10">
+              <h2 className="font-bold text-sm text-charcoal-900 dark:text-white flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-champagne-400/20 text-champagne-600 dark:text-champagne-400 text-xs flex items-center justify-center font-bold">1</span>
+                Import Audio Source
+              </h2>
+              {audioId && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Asset Ready
+                </span>
+              )}
+            </div>
+
             {/* Mode Selector Tabs */}
             <div className="flex items-center p-1 rounded-2xl bg-cream-100/70 dark:bg-charcoal-800/70 border border-plum-700/15 dark:border-white/5">
               <button
@@ -398,7 +642,7 @@ export default function StemsPage() {
                 }`}
               >
                 <LinkIcon className="w-3.5 h-3.5" />
-                <span>Import Music Link (Suno / YouTube / Spotify)</span>
+                <span>Public Music Link (Suno / YouTube / Spotify)</span>
               </button>
             </div>
 
@@ -420,22 +664,16 @@ export default function StemsPage() {
                   </span>
                   <span className="text-xs text-muted mt-1">
                     {selectedFile
-                      ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for separation`
-                      : 'Supports MP3, WAV, FLAC, OGG (recommended < 4.5MB for instant serverless direct upload)'}
+                      ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to prepare`
+                      : 'Supports MP3, WAV, FLAC, OGG (auto-optimized for serverless transfer)'}
                   </span>
                 </label>
-
-                {diagnosticTip && (
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300 font-medium">
-                    {diagnosticTip}
-                  </p>
-                )}
               </div>
             ) : (
               /* Public Music Link Input */
               <div className="space-y-3">
                 <label className="block text-xs font-bold uppercase tracking-wider text-muted">
-                  Public Music URL or Audio Stream
+                  Public Music URL (Suno, YouTube, YouTube Shorts, Spotify, Udio)
                 </label>
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
@@ -444,106 +682,98 @@ export default function StemsPage() {
                       type="url"
                       value={publicUrl}
                       onChange={(e) => setPublicUrl(e.target.value)}
-                      placeholder="https://suno.com/song/... or direct MP3 URL"
+                      placeholder="https://suno.com/song/... or https://youtube.com/watch?v=..."
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/70 dark:bg-charcoal-950/60 border border-plum-700/20 dark:border-white/10 text-xs font-medium focus:outline-none focus:border-champagne-400"
                     />
                   </div>
                 </div>
                 <p className="text-[11px] text-muted">
-                  Bypasses serverless file upload limits entirely. Neural Analog downloads and separates directly from high-speed provider networks.
+                  Neural Analog downloads and analyzes directly from high-speed provider servers, bypassing browser file upload completely.
                 </p>
               </div>
             )}
 
-            {/* Action Trigger */}
+            {/* Ingest Action Button */}
             <button
-              onClick={handleStartSeparation}
-              disabled={isProcessing}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-plum-600 via-plum-700 to-champagne-600 hover:from-plum-500 hover:to-champagne-500 text-white font-extrabold text-sm shadow-xl shadow-plum-950/30 flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+              onClick={handleIngestAudio}
+              disabled={pipelineStage === 'uploading' || pipelineStage === 'ingesting'}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-plum-600 via-plum-700 to-champagne-600 hover:from-plum-500 hover:to-champagne-500 text-white font-extrabold text-xs shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
             >
-              {isProcessing ? (
+              {pipelineStage === 'uploading' || pipelineStage === 'ingesting' ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Separating Stems...</span>
+                  <span>{statusDetails || 'Ingesting Track...'}</span>
                 </>
               ) : (
                 <>
-                  <Zap className="w-4 h-4 text-champagne-300" />
-                  <span>Start Neural Stem Separation</span>
+                  <Upload className="w-4 h-4 text-champagne-300" />
+                  <span>{audioId ? 'Re-upload / Re-import Track' : 'Upload & Prepare Audio Asset'}</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Right Col: Preset Selection */}
-          <div className="glass-panel rounded-3xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-sm text-charcoal-900 dark:text-white">
-                Separation Preset
-              </span>
-              <span className="text-[10px] font-bold text-champagne-600 dark:text-champagne-300 uppercase tracking-wider">
-                RoFormer v2
-              </span>
+          {/* Right Col: Step 2 (Choose Preset & Launch Separation) */}
+          <div className="glass-panel rounded-3xl p-6 space-y-4 flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-plum-700/15 dark:border-white/10">
+                <span className="font-bold text-sm text-charcoal-900 dark:text-white flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-champagne-400/20 text-champagne-600 dark:text-champagne-400 text-xs flex items-center justify-center font-bold">2</span>
+                  Separation Preset
+                </span>
+                <span className="text-[10px] font-bold text-champagne-600 dark:text-champagne-300 uppercase tracking-wider">
+                  RoFormer v2
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {PRESETS.map((preset) => (
+                  <div
+                    key={preset.id}
+                    onClick={() => setSelectedPreset(preset.id)}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      selectedPreset === preset.id
+                        ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
+                        : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-charcoal-900 dark:text-white">
+                        {preset.name}
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-champagne-400/20 text-champagne-700 dark:text-champagne-300">
+                        {preset.badge}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted mt-1">{preset.desc}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="space-y-2.5">
-              {PRESETS.map((preset) => (
-                <div
-                  key={preset.id}
-                  onClick={() => setSelectedPreset(preset.id)}
-                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                    selectedPreset === preset.id
-                      ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
-                      : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-charcoal-900 dark:text-white">
-                      {preset.name}
-                    </span>
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-champagne-400/20 text-champagne-700 dark:text-champagne-300">
-                      {preset.badge}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-muted mt-1">{preset.desc}</p>
-                </div>
-              ))}
-            </div>
+            {/* Launch Stem Separation Button */}
+            <button
+              onClick={handleStartStemSeparation}
+              disabled={!audioId || pipelineStage === 'queue' || pipelineStage === 'processing'}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950 font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4"
+            >
+              <Zap className="w-4 h-4 fill-charcoal-950" />
+              <span>Separate Stems</span>
+            </button>
           </div>
         </div>
 
-        {/* Processing Progress Bar */}
-        {isProcessing && (
-          <div className="glass-panel rounded-3xl p-6 space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-charcoal-900 dark:text-white flex items-center gap-2">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-champagne-400" />
-                {statusText}
-              </span>
-              <span className="font-mono font-bold text-champagne-600 dark:text-champagne-400">
-                {progress}%
-              </span>
-            </div>
-            <div className="h-2 w-full bg-cream-200 dark:bg-charcoal-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-plum-600 to-champagne-400 transition-all duration-500 rounded-full"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        )}
-
         {/* Completed Multi-Channel Mixer */}
-        {stems.length > 0 && (
+        {pipelineStage === 'completed' && stems.length > 0 && (
           <div className="glass-panel-elevated rounded-3xl p-6 sm:p-8 space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-plum-700/15 dark:border-white/10">
               <div>
                 <h2 className="font-extrabold text-lg text-charcoal-900 dark:text-white flex items-center gap-2">
                   <Sliders className="w-5 h-5 text-champagne-400" />
-                  Synchronized Stem Mixer
+                  Synchronized Multitrack Mixer
                 </h2>
                 <p className="text-xs text-muted">
-                  Control channel gain, solo vocal harmonies, mute backing instruments, and download lossless WAV stems.
+                  Lossless 24-bit stems separated from {trackTitle}. Isolate, mute, solo, or download tracks.
                 </p>
               </div>
 

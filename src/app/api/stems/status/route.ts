@@ -13,6 +13,9 @@ function getApiKey(): string {
   );
 }
 
+/**
+ * Checks stem splitting progress on Neural Analog
+ */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -44,7 +47,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         isComplete: false,
         isFailed: true,
+        status: 'failed',
         errorMessage: statusJson.error_message || 'Neural Analog stem splitting failed.',
+        statusDetails: statusJson.status_details || null,
       });
     }
 
@@ -52,7 +57,7 @@ export async function GET(req: NextRequest) {
       isComplete: Boolean(statusJson.is_complete),
       isFailed: false,
       status: statusJson.status || (statusJson.is_complete ? 'completed' : 'in_progress'),
-      statusDetails: statusJson.status_details || null,
+      statusDetails: statusJson.status_details || (statusJson.is_complete ? 'Separation complete!' : 'In processing queue...'),
       audioId: statusJson.audio_id || null,
     });
   } catch (err: unknown) {

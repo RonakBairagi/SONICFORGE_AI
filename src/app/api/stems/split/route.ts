@@ -13,13 +13,17 @@ function getApiKey(): string {
   );
 }
 
+/**
+ * Step 1: Upload audio file directly to Neural Analog (/from-file)
+ * Returns audio_id immediately without waiting for stem separation
+ */
 export async function POST(req: NextRequest) {
   try {
     const apiKey = getApiKey();
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: 'Neural Analog API Key is not configured. Please set AUDIO_SEPARATION_API_KEY.',
+          error: 'Neural Analog API Key is not configured on the server.',
           code: 'MISSING_API_KEY',
         },
         { status: 500 }
@@ -29,27 +33,25 @@ export async function POST(req: NextRequest) {
     let formData: FormData;
     try {
       formData = await req.formData();
-    } catch (parseErr) {
+    } catch {
       return NextResponse.json(
         {
-          error: 'Failed to parse upload form data. If your file is over 4.5MB, serverless limits may apply. Consider using a compressed MP3 or the Public Music Link import.',
-          code: 'FORM_PARSE_ERROR',
+          error: 'Failed to read upload stream. If your audio file is over 4.5 MB, use a compressed audio file or the Public Music Link import to bypass serverless payload limits.',
+          code: 'PAYLOAD_PARSE_ERROR',
         },
         { status: 400 }
       );
     }
 
     const file = formData.get('audio') as File | null;
-    const preset = (formData.get('preset') as string) || '4_tracks';
-
     if (!file) {
       return NextResponse.json(
-        { error: 'Audio file is required for stem separation.', code: 'MISSING_FILE' },
+        { error: 'Audio file is required for upload.', code: 'MISSING_FILE' },
         { status: 400 }
       );
     }
 
-    // Step 1: Upload audio file to Neural Analog (/from-file)
+    // Stream multipart directly to Neural Analog
     const uploadForm = new FormData();
     uploadForm.append('audio', file, file.name);
     uploadForm.append('file_source', 'from_file');
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
       const errText = await uploadRes.text();
       return NextResponse.json(
         {
-          error: `Neural Analog audio ingestion rejected (${uploadRes.status}): ${errText}`,
+          error: `Neural Analog audio ingestion failed (${uploadRes.status}): ${errText}`,
           code: 'INGESTION_FAILED',
         },
         { status: uploadRes.status }
@@ -78,75 +80,22 @@ export async function POST(req: NextRequest) {
 
     if (!audioId) {
       return NextResponse.json(
-        { error: 'Failed to receive audio tracking ID from Neural Analog.', code: 'NO_AUDIO_ID' },
+        { error: 'Failed to obtain audio ID from Neural Analog.', code: 'NO_AUDIO_ID' },
         { status: 500 }
       );
     }
 
-    // Step 2: Poll audio upload completion (usually ready in 1-3 seconds)
-    let audioReady = false;
-    let attempts = 0;
-    while (!audioReady && attempts < 12) {
-      attempts++;
-      await new Promise((r) => setTimeout(r, 1200));
-      const statusRes = await fetch(`${API_BASE}/status/audio/${audioId}`, {
-        headers: { 'X-API-Key': apiKey },
-      });
-      if (statusRes.ok) {
-        const statusJson = await statusRes.json();
-        if (statusJson.is_failed) {
-          return NextResponse.json(
-            { error: statusJson.error_message || 'Audio file processing failed on provider.', code: 'PROCESSING_FAILED' },
-            { status: 500 }
-          );
-        }
-        if (statusJson.is_complete) {
-          audioReady = true;
-          break;
-        }
-      }
-    }
-
-    // Step 3: Trigger Neural Stem Separation (/create-stems)
-    const splitRes = await fetch(`${API_BASE}/create-stems`, {
-      method: 'POST',
-      headers: {
-        'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        audio_id: audioId,
-        preset: preset,
-        bit_depth: 24,
-        hq_streaming_format: 'mp3',
-      }),
-    });
-
-    if (!splitRes.ok) {
-      const splitErr = await splitRes.text();
-      return NextResponse.json(
-        {
-          error: `Stem split initiation failed (${splitRes.status}): ${splitErr}`,
-          code: 'SPLIT_INITIATION_FAILED',
-        },
-        { status: splitRes.status }
-      );
-    }
-
-    const splitJson = await splitRes.json();
-    const creationId = splitJson.creation_id;
-    const audioStems = splitJson.audio_stems || [];
-
+    // Return immediately to decouple upload from downstream processing
     return NextResponse.json({
       success: true,
       audioId,
-      creationId,
-      preset,
-      stems: audioStems,
-      status: 'processing',
+      fileName: file.name,
+      fileSize: file.size,
+      status: uploadJson.status || 'in_progress',
+      message: 'Audio file uploaded and ingested successfully.',
     });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Internal stem separation error';
-    return NextResponse.json({ error: msg, code: 'INTERNAL_ERROR' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : 'Audio upload error';
+    return NextResponse.json({ error: msg, code: 'UPLOAD_EXCEPTION' }, { status: 500 });
   }
 }
