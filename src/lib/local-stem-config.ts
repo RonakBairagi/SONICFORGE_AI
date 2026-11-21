@@ -27,12 +27,14 @@ const CANDIDATE_LOCAL_PORTS = [
 ].filter((p): p is number => p !== null && !isNaN(p) && p > 0);
 
 /**
- * Checks whether the current runtime is in production (e.g. Vercel deployment)
+ * Checks whether the current runtime is in a hosted cloud environment (e.g. Vercel deployment)
+ * where loopback localhost (127.0.0.1) cannot reach the user's local machine.
  */
 export function isProductionEnvironment(): boolean {
-  if (process.env.NODE_ENV === 'production') return true;
   if (process.env.VERCEL === '1') return true;
   if (process.env.VERCEL_ENV === 'production' || process.env.VERCEL_ENV === 'preview') return true;
+  if (Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)) return true;
+  if (process.env.NETLIFY === 'true') return true;
   return false;
 }
 
