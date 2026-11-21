@@ -6,11 +6,11 @@ export const maxDuration = 60;
 const API_BASE = 'https://api.neuralanalog.com';
 
 function getApiKey(): string {
-  return (
-    process.env.AUDIO_SEPARATION_API_KEY?.trim() ||
-    process.env.NEURALANALOG_API_KEY?.trim() ||
-    'na_live_MBbUCp6I19VqTJ-GX9XqZp5l2VNGQ43reSqJ13OS3kM'
-  );
+  const k1 = process.env.NEURALANALOG_API_KEY?.trim();
+  if (k1 && !k1.startsWith('your_')) return k1;
+  const k2 = process.env.AUDIO_SEPARATION_API_KEY?.trim();
+  if (k2 && !k2.startsWith('your_')) return k2;
+  return 'na_live_MBbUCp6I19VqTJ-GX9XqZp5l2VNGQ43reSqJ13OS3kM';
 }
 
 export async function GET(

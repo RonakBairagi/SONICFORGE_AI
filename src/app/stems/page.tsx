@@ -99,6 +99,8 @@ export default function StemsPage() {
   const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const elapsedTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isSubmittingRef = useRef<boolean>(false);
+  const consecutiveErrorsRef = useRef<number>(0);
 
   // Restore saved job from localStorage on mount
   useEffect(() => {
@@ -106,19 +108,21 @@ export default function StemsPage() {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const job = JSON.parse(saved);
-        if (job.creationId && job.stems) {
+        if (job.creationId) {
           setCreationId(job.creationId);
           setAudioId(job.audioId || null);
           setTrackTitle(job.trackTitle || 'Recovered Project');
           setSelectedPreset(job.preset || '4_tracks');
 
-          if (job.isComplete) {
+          const restoredStems = Array.isArray(job.stems) && job.stems.length > 0 ? job.stems : [];
+
+          if (job.isComplete && restoredStems.length > 0) {
             setPipelineStage('completed');
-            setStems(job.stems);
+            setStems(restoredStems);
           } else {
             setPipelineStage('queue');
             setQueueStartTime(job.startTime || Date.now());
-            startStemPolling(job.creationId, job.stems);
+            startStemPolling(job.creationId, restoredStems);
           }
         }
       }
@@ -300,11 +304,14 @@ export default function StemsPage() {
 
   // Stage 2: Trigger Stem Separation
   const handleStartStemSeparation = async () => {
+    if (isSubmittingRef.current) return;
     if (!audioId) {
       warning('Audio not ready', 'Please import or upload an audio track first.');
       return;
     }
 
+    isSubmittingRef.current = true;
+    consecutiveErrorsRef.current = 0;
     setPipelineStage('queue');
     setElapsedSeconds(0);
     setStatusDetails('Submitting stem separation job to Neural Analog hardware queue...');
@@ -326,16 +333,36 @@ export default function StemsPage() {
       const newCreationId = data.creationId;
       setCreationId(newCreationId);
 
-      const formattedStems: StemArtifact[] = (data.stems || []).map(
-        (s: { stem_id: string; stem?: string }, idx: number) => ({
-          id: s.stem_id,
-          name: s.stem ? s.stem.charAt(0).toUpperCase() + s.stem.slice(1) : `Stem ${idx + 1}`,
-          downloadUrl: `/api/stems/download/${s.stem_id}`,
+      const defaultLabels =
+        selectedPreset === '2_tracks'
+          ? ['Vocals', 'Instrumental']
+          : selectedPreset === 'lead_back'
+          ? ['Lead Vocals', 'Backing Vocals']
+          : ['Vocals', 'Drums', 'Bass', 'Other'];
+
+      let formattedStems: StemArtifact[] = [];
+
+      if (Array.isArray(data.stems) && data.stems.length > 0) {
+        formattedStems = data.stems.map(
+          (s: { stem_id: string; stem?: string; download_url?: string }, idx: number) => ({
+            id: s.stem_id,
+            name: s.stem ? s.stem.charAt(0).toUpperCase() + s.stem.slice(1) : `Stem ${idx + 1}`,
+            downloadUrl: s.download_url || `/api/stems/download/${s.stem_id}`,
+            volume: 1.0,
+            muted: false,
+            solo: false,
+          })
+        );
+      } else {
+        formattedStems = defaultLabels.map((label, idx) => ({
+          id: `${newCreationId}_${idx}`,
+          name: label,
+          downloadUrl: `/api/stems/download/${newCreationId}`,
           volume: 1.0,
           muted: false,
           solo: false,
-        })
-      );
+        }));
+      }
 
       // Persist in localStorage so page refresh doesn't lose job
       const jobRecord = {
@@ -355,6 +382,8 @@ export default function StemsPage() {
       const msg = err instanceof Error ? err.message : 'Stem separation failed';
       setErrorMessage(msg);
       error('Separation Error', msg);
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
@@ -362,29 +391,60 @@ export default function StemsPage() {
   const startStemPolling = (jobId: string, currentStems: StemArtifact[]) => {
     let delay = 3000;
     let pollCount = 0;
+    consecutiveErrorsRef.current = 0;
+
+    // Fallback stems if empty
+    const defaultLabels =
+      selectedPreset === '2_tracks'
+        ? ['Vocals', 'Instrumental']
+        : selectedPreset === 'lead_back'
+        ? ['Lead Vocals', 'Backing Vocals']
+        : ['Vocals', 'Drums', 'Bass', 'Other'];
+
+    const activeStems: StemArtifact[] =
+      currentStems && currentStems.length > 0
+        ? currentStems
+        : defaultLabels.map((lbl, idx) => ({
+            id: `${jobId}_${idx}`,
+            name: lbl,
+            downloadUrl: `/api/stems/download/${jobId}`,
+            volume: 1.0,
+            muted: false,
+            solo: false,
+          }));
 
     const poll = async () => {
       pollCount++;
       try {
         const res = await fetch(`/api/stems/status?creationId=${jobId}`);
         if (!res.ok) {
+          consecutiveErrorsRef.current++;
+          if (consecutiveErrorsRef.current >= 4) {
+            setPipelineStage('failed');
+            const errMsg = `Status check failed with code ${res.status}. Please check your connection or retry.`;
+            setErrorMessage(errMsg);
+            error('Polling Error', errMsg);
+            return;
+          }
           scheduleNext(delay);
           return;
         }
 
+        consecutiveErrorsRef.current = 0;
         const data = await res.json();
 
         if (data.isFailed) {
           setPipelineStage('failed');
           setErrorMessage(data.errorMessage || 'Stem separation failed on provider.');
-          error('Job Failed', data.errorMessage);
+          error('Job Failed', data.errorMessage || 'Separation failed');
           localStorage.removeItem(LOCAL_STORAGE_KEY);
           return;
         }
 
         if (data.statusDetails) {
           setStatusDetails(data.statusDetails);
-          if (data.statusDetails.includes('queue')) {
+          const lowerDetails = data.statusDetails.toLowerCase();
+          if (lowerDetails.includes('queue') || lowerDetails.includes('waiting')) {
             setPipelineStage('queue');
           } else {
             setPipelineStage('processing');
@@ -394,14 +454,19 @@ export default function StemsPage() {
         if (data.isComplete) {
           setPipelineStage('completed');
           setStatusDetails('Separation complete! Lossless stems ready.');
-          setStems(currentStems);
+          setStems(activeStems);
 
           // Update storage with completed status
           const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
           if (saved) {
-            const parsed = JSON.parse(saved);
-            parsed.isComplete = true;
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+            try {
+              const parsed = JSON.parse(saved);
+              parsed.isComplete = true;
+              parsed.stems = activeStems;
+              localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+            } catch (e) {
+              console.warn('Failed to parse localStorage during complete update:', e);
+            }
           }
 
           success('Stems Ready!', 'Your isolated audio stems have finished processing.');
@@ -416,6 +481,12 @@ export default function StemsPage() {
         scheduleNext(delay);
       } catch (err) {
         console.warn('Poll status error:', err);
+        consecutiveErrorsRef.current++;
+        if (consecutiveErrorsRef.current >= 4) {
+          setPipelineStage('failed');
+          setErrorMessage('Network connection lost while tracking stem job.');
+          return;
+        }
         scheduleNext(delay);
       }
     };
@@ -437,6 +508,19 @@ export default function StemsPage() {
         if (data.statusDetails) setStatusDetails(data.statusDetails);
         if (data.isComplete) {
           setPipelineStage('completed');
+          if (stems.length === 0) {
+            const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed.stems) && parsed.stems.length > 0) {
+                  setStems(parsed.stems);
+                }
+              } catch (e) {
+                console.warn(e);
+              }
+            }
+          }
           success('Completed!', 'Stem separation finished.');
         }
       }
@@ -447,10 +531,15 @@ export default function StemsPage() {
 
   const handleCancelTracking = () => {
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    isSubmittingRef.current = false;
+    consecutiveErrorsRef.current = 0;
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     setPipelineStage('idle');
     setCreationId(null);
     setAudioId(null);
+    setStatusDetails('');
+    setErrorMessage(null);
     info('Job Dismissed', 'Stopped tracking current stem job.');
   };
 
