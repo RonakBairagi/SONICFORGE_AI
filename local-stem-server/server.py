@@ -61,6 +61,30 @@ registry_lock = asyncio.Lock()
 
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a"}
 MAX_FILE_SIZE_MB = 100
+DEFAULT_PORT = int(os.environ.get("LOCAL_STEM_PORT", "8765"))
+
+
+@app.get("/")
+async def root_index():
+    """
+    Root status and navigation endpoint.
+    Prevents FastAPI 404 {"detail": "Not Found"} when navigating to http://127.0.0.1:8765 in browser.
+    """
+    return {
+        "status": "online",
+        "service": "SonicForge AI - Free Local Demucs Neural Stem Engine",
+        "version": "1.0.0",
+        "device": DEVICE,
+        "deviceName": DEVICE_NAME,
+        "port": DEFAULT_PORT,
+        "endpoints": {
+            "health": f"http://127.0.0.1:{DEFAULT_PORT}/health",
+            "docs": f"http://127.0.0.1:{DEFAULT_PORT}/docs",
+            "separate": f"http://127.0.0.1:{DEFAULT_PORT}/separate",
+            "jobs": f"http://127.0.0.1:{DEFAULT_PORT}/jobs",
+        },
+        "message": "Local Demucs AI is operational and ready to process stems."
+    }
 
 
 @app.get("/health")
@@ -70,6 +94,7 @@ async def health_check():
         "status": "ok",
         "service": "SonicForge Local Demucs Engine",
         "version": "1.0.0",
+        "port": DEFAULT_PORT,
         "device": DEVICE,
         "deviceName": DEVICE_NAME,
         "defaultModel": "htdemucs",
@@ -139,7 +164,7 @@ def scan_completed_stems(job_id: str, job_dir: Path) -> list:
             "stem_id": f"{job_id}_{stem_name}",
             "stem": stem_name,
             "name": display_name,
-            "download_url": f"http://127.0.0.1:8000/stems/{job_id}/{wav_file.name}",
+            "download_url": f"http://127.0.0.1:{DEFAULT_PORT}/stems/{job_id}/{wav_file.name}",
             "status": "completed",
             "size_bytes": wav_file.stat().st_size if wav_file.exists() else 0,
         })
@@ -356,5 +381,5 @@ async def delete_job(job_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"[*] Starting SonicForge Local Demucs Engine on http://127.0.0.1:8000 (Device: {DEVICE_NAME})")
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    print(f"[*] Starting SonicForge Local Demucs Engine on http://127.0.0.1:{DEFAULT_PORT} (Device: {DEVICE_NAME})")
+    uvicorn.run("server:app", host="127.0.0.1", port=DEFAULT_PORT, reload=True)

@@ -511,7 +511,7 @@ export default function StemsPage() {
           if (consecutiveErrorsRef.current >= 4) {
             setPipelineStage('failed');
             const errMsg =
-              'Failed to communicate with local Demucs engine. Please verify local-stem-server is running on http://127.0.0.1:8000.';
+              'Failed to communicate with local Demucs engine. Please verify local-stem-server is running on http://127.0.0.1:8765.';
             setErrorMessage(errMsg);
             error('Local Engine Error', errMsg);
             return;

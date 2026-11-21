@@ -7,11 +7,16 @@ Write-Host " Powered by Meta AI Demucs (HTDemucs v4)" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
 
+# 1. Ensure current directory is local-stem-server regardless of starting directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $scriptDir
+if ($scriptDir -and (Test-Path $scriptDir)) {
+    Set-Location $scriptDir
+}
 
-# 1. Check Python
-Write-Host "[1/3] Checking Python installation..." -ForegroundColor Green
+$port = if ($env:LOCAL_STEM_PORT) { $env:LOCAL_STEM_PORT } else { "8765" }
+
+# 2. Check Python
+Write-Host "[1/4] Checking Python installation..." -ForegroundColor Green
 try {
     $pyVer = & python --version 2>&1
     Write-Host "Found: $pyVer" -ForegroundColor Gray
@@ -21,17 +26,28 @@ try {
     exit 1
 }
 
-# 2. Check dependencies
-Write-Host "[2/3] Checking dependencies..." -ForegroundColor Green
-& python -m pip install -r requirements.txt
+# 3. Check dependencies
+Write-Host "[2/4] Verifying dependencies..." -ForegroundColor Green
+& python -m pip install -r requirements.txt --quiet
 
-# 3. Launch Uvicorn
-Write-Host "[3/3] Launching Demucs Local Engine on http://127.0.0.1:8000 ..." -ForegroundColor Green
+# 4. Check port availability
+Write-Host "[3/4] Checking port $port..." -ForegroundColor Green
+$occupied = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+if ($occupied) {
+    Write-Host "[NOTICE] Port $port is already in use by process ID $($occupied.OwningProcess)." -ForegroundColor Yellow
+    Write-Host "If this is an existing SonicForge backend, it is already active!" -ForegroundColor Yellow
+    Write-Host "To kill and restart it, run: Stop-Process -Id $($occupied.OwningProcess) -Force" -ForegroundColor Yellow
+}
+
+# 5. Launch Uvicorn
+Write-Host "[4/4] Starting Demucs Local Engine on http://127.0.0.1:$port ..." -ForegroundColor Green
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host " Engine is online! Keep this window open while separating" -ForegroundColor Green
-Write-Host " stems in SonicForge AI." -ForegroundColor Green
+Write-Host " Local Demucs AI is ONLINE! Keep this window open." -ForegroundColor Green
+Write-Host " Root Status:      http://127.0.0.1:$port/" -ForegroundColor Cyan
+Write-Host " Health Check:     http://127.0.0.1:$port/health" -ForegroundColor Yellow
+Write-Host " Interactive Docs: http://127.0.0.1:$port/docs" -ForegroundColor Yellow
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
 
-& python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+& python -m uvicorn server:app --host 127.0.0.1 --port $port

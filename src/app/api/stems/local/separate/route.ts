@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveActiveLocalServerUrl } from '@/lib/local-stem-config';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const LOCAL_SERVER_URL = process.env.LOCAL_DEMUCS_SERVER_URL || 'http://127.0.0.1:8000';
-
 export async function POST(req: NextRequest) {
+  const activeUrl = await resolveActiveLocalServerUrl();
+
   try {
     const formData = await req.formData();
     const file = formData.get('audio') as File | null;
@@ -21,9 +22,9 @@ export async function POST(req: NextRequest) {
     forwardForm.append('preset', preset);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const res = await fetch(`${LOCAL_SERVER_URL}/separate`, {
+    const res = await fetch(`${activeUrl}/separate`, {
       method: 'POST',
       body: forwardForm,
       signal: controller.signal,
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : 'Failed to connect to local Demucs engine';
     return NextResponse.json(
       {
-        error: `Could not reach local Demucs engine on ${LOCAL_SERVER_URL}. Please ensure 'local-stem-server/start.bat' is running. (${msg})`,
+        error: `Could not reach local Demucs engine on ${activeUrl}. Please ensure 'local-stem-server/start.bat' is running. (${msg})`,
         code: 'LOCAL_SERVER_UNREACHABLE',
         launchHelp: 'Launch local-stem-server/start.bat on your PC to enable free offline Demucs processing.',
       },

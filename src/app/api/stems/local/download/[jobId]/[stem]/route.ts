@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveActiveLocalServerUrl } from '@/lib/local-stem-config';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-const LOCAL_SERVER_URL = process.env.LOCAL_DEMUCS_SERVER_URL || 'http://127.0.0.1:8000';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { jobId: string; stem: string } }
 ) {
+  const activeUrl = await resolveActiveLocalServerUrl();
+
   try {
     const { jobId, stem } = params;
     if (!jobId || !stem) {
@@ -21,7 +22,7 @@ export async function GET(
       headers['Range'] = rangeHeader;
     }
 
-    const res = await fetch(`${LOCAL_SERVER_URL}/stems/${jobId}/${stem}`, {
+    const res = await fetch(`${activeUrl}/stems/${jobId}/${stem}`, {
       headers,
     });
 

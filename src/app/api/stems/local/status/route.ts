@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { resolveActiveLocalServerUrl } from '@/lib/local-stem-config';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 10;
 
-const LOCAL_SERVER_URL = process.env.LOCAL_DEMUCS_SERVER_URL || 'http://127.0.0.1:8000';
-
 export async function GET(req: NextRequest) {
+  const activeUrl = await resolveActiveLocalServerUrl();
+
   try {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId') || searchParams.get('creationId');
@@ -15,9 +16,9 @@ export async function GET(req: NextRequest) {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+    const timeout = setTimeout(() => controller.abort(), 4000);
 
-    const res = await fetch(`${LOCAL_SERVER_URL}/status/${jobId}`, {
+    const res = await fetch(`${activeUrl}/status/${jobId}`, {
       signal: controller.signal,
       cache: 'no-store',
     });
@@ -47,14 +48,18 @@ export async function GET(req: NextRequest) {
       isComplete: Boolean(data.isComplete || data.status === 'completed'),
       isFailed: Boolean(data.isFailed || data.status === 'failed'),
       progress: data.progress || 0,
-      statusDetails: data.statusDetails || (data.status === 'completed' ? 'Separation complete! Lossless stems ready.' : 'Processing on Demucs local engine...'),
+      statusDetails:
+        data.statusDetails ||
+        (data.status === 'completed'
+          ? 'Separation complete! Lossless stems ready.'
+          : 'Processing on Demucs local engine...'),
       stems: stems,
       error: data.error || null,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Status check failed';
     return NextResponse.json(
-      { error: `Could not query local Demucs engine: ${msg}`, code: 'LOCAL_STATUS_ERROR' },
+      { error: `Could not query local Demucs engine on ${activeUrl}: ${msg}`, code: 'LOCAL_STATUS_ERROR' },
       { status: 503 }
     );
   }
