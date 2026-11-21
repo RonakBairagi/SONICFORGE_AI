@@ -37,3 +37,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Local Demucs Audio Processing Server
+local-stem-server/storage/
+local-stem-server/__pycache__/
+*.pyc
+

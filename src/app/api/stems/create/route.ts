@@ -63,8 +63,28 @@ export async function POST(req: NextRequest) {
 
     let data: any = null;
 
-    // Fallback to /presets/run if /create-stems is rejected
+    // Detect quota or insufficient minutes error early
     if (!res.ok) {
+      const errText = await res.text();
+      const isQuota =
+        res.status === 403 ||
+        errText.toLowerCase().includes('processing minutes') ||
+        errText.toLowerCase().includes('quota') ||
+        errText.toLowerCase().includes('not enough');
+
+      if (isQuota) {
+        return NextResponse.json(
+          {
+            error:
+              'Neural Analog cloud processing minutes exhausted (Cost: 0.5m, Remaining: 0.2m). Switch to the Free Local Engine to run Demucs AI locally with no quota limits.',
+            code: 'QUOTA_EXCEEDED',
+            isQuotaError: true,
+            providerError: errText,
+          },
+          { status: 403 }
+        );
+      }
+
       console.warn(`[Stem Create] /create-stems failed (${res.status}), trying /presets/run fallback...`);
       res = await fetch(`${API_BASE}/presets/run`, {
         method: 'POST',
@@ -80,11 +100,20 @@ export async function POST(req: NextRequest) {
       });
 
       if (!res.ok) {
-        const errText = await res.text();
+        const fallbackErrText = await res.text();
+        const fallbackIsQuota =
+          res.status === 403 ||
+          fallbackErrText.toLowerCase().includes('processing minutes') ||
+          fallbackErrText.toLowerCase().includes('quota');
+
         return NextResponse.json(
           {
-            error: `Failed to trigger stem separation (${res.status}): ${errText}`,
-            code: 'CREATE_STEMS_FAILED',
+            error: fallbackIsQuota
+              ? 'Neural Analog cloud processing minutes exhausted. Switch to the Free Local Engine to continue.'
+              : `Failed to trigger stem separation (${res.status}): ${fallbackErrText}`,
+            code: fallbackIsQuota ? 'QUOTA_EXCEEDED' : 'CREATE_STEMS_FAILED',
+            isQuotaError: fallbackIsQuota,
+            providerError: fallbackErrText,
           },
           { status: res.status }
         );

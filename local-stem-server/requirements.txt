@@ -1,0 +1,9 @@
+# SonicForge AI - Local Neural Stem Engine Dependencies
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9
+torch>=2.0.0
+torchaudio>=2.0.0
+demucs>=4.0.0
+soundfile>=0.12.0
+scipy>=1.10.0
