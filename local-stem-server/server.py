@@ -133,9 +133,6 @@ async def health_check():
         "supportedPresets": ["4_tracks", "2_tracks"],
         "activeJobs": len(job_registry),
     }
-        "supportedPresets": ["4_tracks", "2_tracks"],
-        "activeJobs": len(job_registry),
-    }
 
 
 @app.get("/jobs", dependencies=[Depends(verify_stem_auth)])
