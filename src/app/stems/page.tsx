@@ -28,6 +28,12 @@ import {
 import { AppShell } from '@/components/layout/AppShell';
 import { useToast } from '@/context/ToastContext';
 import { audioBufferToWav } from '@/lib/wav-encoder';
+import {
+  isHuggingFaceSpaceTarget,
+  getCleanGradioSpaceTarget,
+  checkGradioSpaceHealth,
+  separateWithGradioSpace,
+} from '@/lib/gradio-stem-adapter';
 
 interface StemArtifact {
   id: string;
@@ -94,10 +100,25 @@ export default function StemsPage() {
     message: string;
   } | null>(null);
 
-  // Periodically check Demucs server health (local or hosted)
+  // Periodically check Demucs server health (local, hosted FastAPI, or Hugging Face Space)
   useEffect(() => {
     const checkLocalHealth = async () => {
       try {
+        const spaceTarget = getCleanGradioSpaceTarget();
+        if (spaceTarget && isHuggingFaceSpaceTarget(spaceTarget)) {
+          const gh = await checkGradioSpaceHealth();
+          setLocalServerStatus({
+            online: gh.online,
+            configured: true,
+            isProduction: true,
+            deviceName: gh.deviceName || (gh.zeroGpuEnabled ? 'Hugging Face ZeroGPU' : 'Hugging Face Space'),
+            device: gh.device || 'gpu',
+            model: gh.model || 'htdemucs',
+            message: gh.error,
+          });
+          return;
+        }
+
         const res = await fetch('/api/stems/local/health');
         const data = await res.json().catch(() => ({ online: false }));
         setLocalServerStatus(data);
@@ -473,6 +494,86 @@ export default function StemsPage() {
     setQuotaExceededInfo(null);
 
     try {
+      const spaceTarget = getCleanGradioSpaceTarget();
+
+      // Path A: Hugging Face Gradio Space (Direct client-to-Space streaming via @gradio/client)
+      // Bypasses Vercel 4.5 MB serverless limit and function timeouts
+      if (spaceTarget && isHuggingFaceSpaceTarget(spaceTarget)) {
+        setStatusDetails('Connecting to Hugging Face Demucs Space...');
+        setPipelineStage('processing');
+
+        const gradioResult = await separateWithGradioSpace(
+          selectedFile,
+          selectedPreset,
+          (statusText) => setStatusDetails(statusText)
+        );
+
+        setCreationId(gradioResult.jobId);
+        setTrackTitle(selectedFile.name);
+        setPipelineStage('completed');
+        setStatusDetails('Separation complete! Lossless stems ready.');
+
+        const formattedStems: StemArtifact[] =
+          selectedPreset === '2_tracks'
+            ? [
+                {
+                  id: `${gradioResult.jobId}_vocals`,
+                  name: 'Vocals',
+                  downloadUrl: gradioResult.vocalsUrl,
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                },
+                {
+                  id: `${gradioResult.jobId}_instrumental`,
+                  name: 'Instrumental',
+                  downloadUrl: gradioResult.instrumentalUrl || gradioResult.vocalsUrl,
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                },
+              ]
+            : [
+                {
+                  id: `${gradioResult.jobId}_vocals`,
+                  name: 'Vocals',
+                  downloadUrl: gradioResult.vocalsUrl,
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                },
+                {
+                  id: `${gradioResult.jobId}_drums`,
+                  name: 'Drums',
+                  downloadUrl: gradioResult.drumsUrl || '',
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                },
+                {
+                  id: `${gradioResult.jobId}_bass`,
+                  name: 'Bass',
+                  downloadUrl: gradioResult.bassUrl || '',
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                },
+                {
+                  id: `${gradioResult.jobId}_other`,
+                  name: 'Other Instruments',
+                  downloadUrl: gradioResult.otherUrl || '',
+                  volume: 1.0,
+                  muted: false,
+                  solo: false,
+                },
+              ].filter((s) => Boolean(s.downloadUrl));
+
+        setStems(formattedStems);
+        success('Stems Ready!', 'Demucs ZeroGPU finished separating all stems.');
+        return;
+      }
+
+      // Path B: Local Demucs Server or Hosted FastAPI Server
       const formData = new FormData();
       formData.append('audio', selectedFile);
       formData.append('preset', selectedPreset);

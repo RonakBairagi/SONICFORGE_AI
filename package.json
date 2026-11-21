@@ -9,6 +9,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@gradio/client": "^2.8.0",
     "clsx": "^2.1.1",
     "firebase": "^10.14.1",
     "lucide-react": "^0.454.0",

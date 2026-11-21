@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+storage/
+*.wav
+*.mp3
+.venv/
