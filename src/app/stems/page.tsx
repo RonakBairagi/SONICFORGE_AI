@@ -508,18 +508,37 @@ export default function StemsPage() {
         if (data.statusDetails) setStatusDetails(data.statusDetails);
         if (data.isComplete) {
           setPipelineStage('completed');
+          setStatusDetails('Separation complete! Lossless stems ready.');
           if (stems.length === 0) {
+            let loadedStems: StemArtifact[] = [];
             const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
             if (saved) {
               try {
                 const parsed = JSON.parse(saved);
                 if (Array.isArray(parsed.stems) && parsed.stems.length > 0) {
-                  setStems(parsed.stems);
+                  loadedStems = parsed.stems;
                 }
               } catch (e) {
                 console.warn(e);
               }
             }
+            if (loadedStems.length === 0) {
+              const defaultLabels =
+                selectedPreset === '2_tracks'
+                  ? ['Vocals', 'Instrumental']
+                  : selectedPreset === 'lead_back'
+                  ? ['Lead Vocals', 'Backing Vocals']
+                  : ['Vocals', 'Drums', 'Bass', 'Other'];
+              loadedStems = defaultLabels.map((lbl, idx) => ({
+                id: `${creationId}_${idx}`,
+                name: lbl,
+                downloadUrl: `/api/stems/download/${creationId}`,
+                volume: 1.0,
+                muted: false,
+                solo: false,
+              }));
+            }
+            setStems(loadedStems);
           }
           success('Completed!', 'Stem separation finished.');
         }
