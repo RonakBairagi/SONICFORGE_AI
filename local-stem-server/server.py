@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -34,12 +34,40 @@ except Exception:
     DEVICE_NAME = "Host CPU"
 
 app = FastAPI(
-    title="SonicForge AI - Local Neural Stem Engine",
-    description="Local open-source music separation server running Demucs (HTDemucs v4)",
-    version="1.0.0",
+    title="SonicForge AI - Neural Stem Separation Engine",
+    description="Dual-environment music separation server running Demucs (HTDemucs v4) for local or hosted cloud deployment",
+    version="1.1.0",
 )
 
-# Allow CORS for Next.js dev server & local interfaces
+# Optional API key protection for hosted production environments
+STEM_API_KEY = os.environ.get("STEM_API_KEY", "").strip()
+
+def verify_stem_auth(request: Request):
+    """
+    Validates API key when running on a hosted/production server.
+    When STEM_API_KEY is not configured (e.g. local development), authentication is skipped.
+    """
+    if not STEM_API_KEY:
+        return True
+
+    auth_header = request.headers.get("Authorization", "").strip()
+    x_api_key = request.headers.get("X-API-Key", "").strip()
+
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif x_api_key:
+        token = x_api_key
+
+    if token != STEM_API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Invalid or missing STEM_API_KEY for this hosted Demucs engine."
+        )
+    return True
+
+# Configurable CORS origins for local dev, custom domains, and Vercel deployments
+custom_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -48,7 +76,8 @@ app.add_middleware(
         "http://localhost:3001",
         "http://127.0.0.1:3001",
         "*"
-    ],
+    ] + custom_origins,
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,29 +90,31 @@ registry_lock = asyncio.Lock()
 
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a"}
 MAX_FILE_SIZE_MB = 100
-DEFAULT_PORT = int(os.environ.get("LOCAL_STEM_PORT", "8765"))
+DEFAULT_PORT = int(os.environ.get("PORT", os.environ.get("LOCAL_STEM_PORT", "8765")))
 
 
 @app.get("/")
-async def root_index():
+async def root_index(request: Request):
     """
     Root status and navigation endpoint.
-    Prevents FastAPI 404 {"detail": "Not Found"} when navigating to http://127.0.0.1:8765 in browser.
+    Dynamically renders endpoints using the actual incoming host/protocol.
     """
+    base_url = str(request.base_url).rstrip('/')
     return {
         "status": "online",
-        "service": "SonicForge AI - Free Local Demucs Neural Stem Engine",
-        "version": "1.0.0",
+        "service": "SonicForge AI - Demucs Neural Stem Engine",
+        "version": "1.1.0",
         "device": DEVICE,
         "deviceName": DEVICE_NAME,
         "port": DEFAULT_PORT,
         "endpoints": {
-            "health": f"http://127.0.0.1:{DEFAULT_PORT}/health",
-            "docs": f"http://127.0.0.1:{DEFAULT_PORT}/docs",
-            "separate": f"http://127.0.0.1:{DEFAULT_PORT}/separate",
-            "jobs": f"http://127.0.0.1:{DEFAULT_PORT}/jobs",
+            "health": f"{base_url}/health",
+            "docs": f"{base_url}/docs",
+            "separate": f"{base_url}/separate",
+            "jobs": f"{base_url}/jobs",
         },
-        "message": "Local Demucs AI is operational and ready to process stems."
+        "authRequired": bool(STEM_API_KEY),
+        "message": "Demucs AI is operational and ready to process stems."
     }
 
 
@@ -92,25 +123,29 @@ async def health_check():
     """Health status and hardware probe"""
     return {
         "status": "ok",
-        "service": "SonicForge Local Demucs Engine",
-        "version": "1.0.0",
+        "service": "SonicForge Demucs Engine",
+        "version": "1.1.0",
         "port": DEFAULT_PORT,
         "device": DEVICE,
         "deviceName": DEVICE_NAME,
         "defaultModel": "htdemucs",
+        "authRequired": bool(STEM_API_KEY),
+        "supportedPresets": ["4_tracks", "2_tracks"],
+        "activeJobs": len(job_registry),
+    }
         "supportedPresets": ["4_tracks", "2_tracks"],
         "activeJobs": len(job_registry),
     }
 
 
-@app.get("/jobs")
+@app.get("/jobs", dependencies=[Depends(verify_stem_auth)])
 async def list_jobs():
     """Returns active job registry"""
     async with registry_lock:
         return {"jobs": list(job_registry.values())}
 
 
-@app.get("/status/{job_id}")
+@app.get("/status/{job_id}", dependencies=[Depends(verify_stem_auth)])
 async def get_job_status(job_id: str):
     """Poll job status for frontend progress updates"""
     async with registry_lock:
@@ -164,7 +199,7 @@ def scan_completed_stems(job_id: str, job_dir: Path) -> list:
             "stem_id": f"{job_id}_{stem_name}",
             "stem": stem_name,
             "name": display_name,
-            "download_url": f"http://127.0.0.1:{DEFAULT_PORT}/stems/{job_id}/{wav_file.name}",
+            "download_url": f"/stems/{job_id}/{wav_file.name}",
             "status": "completed",
             "size_bytes": wav_file.stat().st_size if wav_file.exists() else 0,
         })
@@ -262,7 +297,7 @@ async def run_demucs_subprocess(job_id: str, input_path: Path, preset: str):
                 job_registry[job_id]["statusDetails"] = f"Local processing error: {err_text[:120]}"
 
 
-@app.post("/separate")
+@app.post("/separate", dependencies=[Depends(verify_stem_auth)])
 async def create_separation_job(
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
@@ -336,7 +371,7 @@ async def create_separation_job(
     }
 
 
-@app.get("/stems/{job_id}/{stem_filename}")
+@app.get("/stems/{job_id}/{stem_filename}", dependencies=[Depends(verify_stem_auth)])
 async def download_stem(job_id: str, stem_filename: str):
     """Streams a generated stem WAV file with range support for audio player seeking"""
     # Sanitize path
@@ -367,7 +402,7 @@ async def download_stem(job_id: str, stem_filename: str):
     )
 
 
-@app.delete("/jobs/{job_id}")
+@app.delete("/jobs/{job_id}", dependencies=[Depends(verify_stem_auth)])
 async def delete_job(job_id: str):
     """Deletes job artifacts from disk and registry"""
     job_dir = JOBS_DIR / job_id
@@ -381,5 +416,7 @@ async def delete_job(job_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"[*] Starting SonicForge Local Demucs Engine on http://127.0.0.1:{DEFAULT_PORT} (Device: {DEVICE_NAME})")
-    uvicorn.run("server:app", host="127.0.0.1", port=DEFAULT_PORT, reload=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", os.environ.get("LOCAL_STEM_PORT", "8765")))
+    print(f"[*] Starting SonicForge Demucs Engine on http://{host}:{port} (Device: {DEVICE_NAME})")
+    uvicorn.run("server:app", host=host, port=port, reload=True if host == "127.0.0.1" else False)

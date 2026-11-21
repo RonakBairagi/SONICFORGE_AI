@@ -80,25 +80,27 @@ export default function StemsPage() {
   const [engineMode, setEngineMode] = useState<'cloud' | 'local'>('cloud');
   const [localServerStatus, setLocalServerStatus] = useState<{
     online: boolean;
+    configured?: boolean;
+    isProduction?: boolean;
     device?: string;
     deviceName?: string;
     model?: string;
     launchHelp?: string;
+    code?: string;
+    message?: string;
   } | null>(null);
   const [quotaExceededInfo, setQuotaExceededInfo] = useState<{
     isQuota: boolean;
     message: string;
   } | null>(null);
 
-  // Periodically check local Demucs server health
+  // Periodically check Demucs server health (local or hosted)
   useEffect(() => {
     const checkLocalHealth = async () => {
       try {
         const res = await fetch('/api/stems/local/health');
-        if (res.ok) {
-          const data = await res.json();
-          setLocalServerStatus(data);
-        }
+        const data = await res.json().catch(() => ({ online: false }));
+        setLocalServerStatus(data);
       } catch {
         setLocalServerStatus({ online: false });
       }
@@ -153,14 +155,9 @@ export default function StemsPage() {
             setPipelineStage('completed');
             setStems(restoredStems);
           } else {
-            const isStale = Date.now() - (job.startTime || 0) > 8 * 60 * 1000;
-            if (isStale) {
-              localStorage.removeItem(LOCAL_STORAGE_KEY);
-            } else {
-              setPipelineStage('queue');
-              setQueueStartTime(job.startTime || Date.now());
-              startStemPolling(job.creationId, restoredStems);
-            }
+            setPipelineStage('queue');
+            setQueueStartTime(job.startTime || Date.now());
+            startStemPolling(job.creationId, restoredStems);
           }
         }
       }
@@ -402,8 +399,8 @@ export default function StemsPage() {
         selectedPreset === '2_tracks'
           ? ['Vocals', 'Instrumental']
           : selectedPreset === 'lead_back'
-          ? ['Lead Vocals', 'Backing Vocals']
-          : ['Vocals', 'Drums', 'Bass', 'Other'];
+            ? ['Lead Vocals', 'Backing Vocals']
+            : ['Vocals', 'Drums', 'Bass', 'Other'];
 
       let formattedStems: StemArtifact[] = [];
 
@@ -453,10 +450,17 @@ export default function StemsPage() {
     }
   };
 
-  // Local Demucs Separation Handler
+  // Demucs Stem Separation Handler (Local or Hosted)
   const handleStartLocalSeparation = async () => {
     if (!selectedFile) {
       warning('No audio file', 'Please select or drop an audio file first.');
+      return;
+    }
+
+    if (localServerStatus?.configured === false && localServerStatus?.isProduction) {
+      const msg = 'Hosted Demucs backend is not configured in Vercel. Set NEXT_PUBLIC_STEM_API_URL in project environment variables.';
+      setErrorMessage(msg);
+      error('Configuration Required', msg);
       return;
     }
 
@@ -464,7 +468,7 @@ export default function StemsPage() {
     consecutiveErrorsRef.current = 0;
     setPipelineStage('uploading');
     setElapsedSeconds(0);
-    setStatusDetails('Streaming audio to local Demucs engine...');
+    setStatusDetails('Streaming audio to Demucs neural engine...');
     setErrorMessage(null);
     setQuotaExceededInfo(null);
 
@@ -479,8 +483,22 @@ export default function StemsPage() {
       });
 
       if (!res.ok) {
-        const errJson = await res.json().catch(() => ({ error: `Local engine error (${res.status})` }));
-        throw new Error(errJson.error || 'Failed to start local separation');
+        const errJson = await res.json().catch(() => ({ error: `Engine error (${res.status})` }));
+        const code = errJson.code;
+
+        if (code === 'MISSING_PRODUCTION_BACKEND') {
+          throw new Error('Hosted Demucs backend is not configured in Vercel. Please set NEXT_PUBLIC_STEM_API_URL in project settings.');
+        }
+        if (code === 'AUTH_FAILURE') {
+          throw new Error('Authentication failed connecting to Demucs backend. Check STEM_API_KEY.');
+        }
+        if (code === 'PAYLOAD_TOO_LARGE') {
+          throw new Error('Audio file exceeds the maximum allowed upload limit.');
+        }
+        if (code === 'QUOTA_EXCEEDED') {
+          throw new Error('Demucs backend rate limit or concurrency quota reached. Please try again shortly.');
+        }
+        throw new Error(errJson.error || 'Failed to start Demucs separation');
       }
 
       const data = await res.json();
@@ -488,20 +506,24 @@ export default function StemsPage() {
       setCreationId(jobId);
       setTrackTitle(selectedFile.name);
       setPipelineStage('processing');
-      setStatusDetails('Demucs neural source separation in progress on your machine...');
+      setStatusDetails(
+        localServerStatus?.isProduction
+          ? 'Demucs neural source separation in progress on hosted GPU...'
+          : 'Demucs neural source separation in progress on your machine...'
+      );
 
       startLocalStemPolling(jobId);
     } catch (err: unknown) {
       setPipelineStage('failed');
-      const msg = err instanceof Error ? err.message : 'Local separation failed';
+      const msg = err instanceof Error ? err.message : 'Separation failed';
       setErrorMessage(msg);
-      error('Local Engine Error', msg);
+      error('Engine Error', msg);
     } finally {
       isSubmittingRef.current = false;
     }
   };
 
-  // Polling for Local Demucs Engine
+  // Polling for Demucs Engine (Local or Hosted)
   const startLocalStemPolling = (jobId: string) => {
     let delay = 2000;
     let pollCount = 0;
@@ -511,14 +533,32 @@ export default function StemsPage() {
       pollCount++;
       try {
         const res = await fetch(`/api/stems/local/status?jobId=${jobId}`);
+
+        if (res.status === 401 || res.status === 403) {
+          setPipelineStage('failed');
+          const errMsg = 'Demucs backend authentication failed (401/403). Verify STEM_API_KEY.';
+          setErrorMessage(errMsg);
+          error('Authentication Error', errMsg);
+          return;
+        }
+
+        if (res.status === 429) {
+          setPipelineStage('failed');
+          const errMsg = 'Demucs backend concurrency quota exhausted. Please try again later.';
+          setErrorMessage(errMsg);
+          error('Quota Exceeded', errMsg);
+          return;
+        }
+
         if (!res.ok) {
           consecutiveErrorsRef.current++;
           if (consecutiveErrorsRef.current >= 4) {
             setPipelineStage('failed');
-            const errMsg =
-              'Failed to communicate with local Demucs engine. Please verify local-stem-server is running on http://127.0.0.1:8765.';
+            const errMsg = localServerStatus?.isProduction
+              ? 'Lost connection to hosted Demucs engine. The server may have restarted.'
+              : 'Failed to communicate with local Demucs engine. Please verify local-stem-server is running on http://127.0.0.1:8765.';
             setErrorMessage(errMsg);
-            error('Local Engine Error', errMsg);
+            error('Engine Error', errMsg);
             return;
           }
           scheduleNext(delay);
@@ -528,10 +568,10 @@ export default function StemsPage() {
         consecutiveErrorsRef.current = 0;
         const data = await res.json();
 
-        if (data.isFailed) {
+        if (data.isFailed || data.status === 'failed') {
           setPipelineStage('failed');
-          setErrorMessage(data.error || 'Local Demucs separation failed.');
-          error('Local Job Failed', data.error);
+          setErrorMessage(data.error || 'Demucs separation failed.');
+          error('Job Failed', data.error);
           return;
         }
 
@@ -559,11 +599,11 @@ export default function StemsPage() {
 
         scheduleNext(delay);
       } catch (err) {
-        console.warn('Local poll error:', err);
+        console.warn('Demucs poll error:', err);
         consecutiveErrorsRef.current++;
         if (consecutiveErrorsRef.current >= 4) {
           setPipelineStage('failed');
-          setErrorMessage('Connection to local Demucs engine lost.');
+          setErrorMessage('Connection to Demucs engine lost.');
           return;
         }
         scheduleNext(delay);
@@ -588,20 +628,20 @@ export default function StemsPage() {
       selectedPreset === '2_tracks'
         ? ['Vocals', 'Instrumental']
         : selectedPreset === 'lead_back'
-        ? ['Lead Vocals', 'Backing Vocals']
-        : ['Vocals', 'Drums', 'Bass', 'Other'];
+          ? ['Lead Vocals', 'Backing Vocals']
+          : ['Vocals', 'Drums', 'Bass', 'Other'];
 
     const activeStems: StemArtifact[] =
       currentStems && currentStems.length > 0
         ? currentStems
         : defaultLabels.map((lbl, idx) => ({
-            id: `${jobId}_${idx}`,
-            name: lbl,
-            downloadUrl: `/api/stems/download/${jobId}`,
-            volume: 1.0,
-            muted: false,
-            solo: false,
-          }));
+          id: `${jobId}_${idx}`,
+          name: lbl,
+          downloadUrl: `/api/stems/download/${jobId}`,
+          volume: 1.0,
+          muted: false,
+          solo: false,
+        }));
 
     const poll = async () => {
       pollCount++;
@@ -717,8 +757,8 @@ export default function StemsPage() {
                 selectedPreset === '2_tracks'
                   ? ['Vocals', 'Instrumental']
                   : selectedPreset === 'lead_back'
-                  ? ['Lead Vocals', 'Backing Vocals']
-                  : ['Vocals', 'Drums', 'Bass', 'Other'];
+                    ? ['Lead Vocals', 'Backing Vocals']
+                    : ['Vocals', 'Drums', 'Bass', 'Other'];
               loadedStems = defaultLabels.map((lbl, idx) => ({
                 id: `${creationId}_${idx}`,
                 name: lbl,
@@ -856,11 +896,10 @@ export default function StemsPage() {
                 setErrorMessage(null);
                 setQuotaExceededInfo(null);
               }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                engineMode === 'cloud'
-                  ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
-                  : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-              }`}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${engineMode === 'cloud'
+                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
+                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                }`}
             >
               <Radio className="w-3.5 h-3.5 text-champagne-500" />
               <span>Neural Analog Cloud</span>
@@ -870,11 +909,10 @@ export default function StemsPage() {
                 setEngineMode('local');
                 setErrorMessage(null);
               }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                engineMode === 'local'
-                  ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-emerald-500/40'
-                  : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-              }`}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${engineMode === 'local'
+                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-emerald-500/40'
+                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                }`}
             >
               <Cpu className="w-3.5 h-3.5 text-emerald-500" />
               <span>Free Local Engine</span>
@@ -889,8 +927,29 @@ export default function StemsPage() {
               localServerStatus?.online ? (
                 <span className="inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Demucs Engine Online ({localServerStatus.deviceName || localServerStatus.device?.toUpperCase() || 'Local CPU'})
+                  Demucs Online ({localServerStatus.deviceName || (localServerStatus.isProduction ? 'Hosted GPU' : 'Host CPU')})
                 </span>
+              ) : localServerStatus?.configured === false && localServerStatus?.isProduction ? (
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    Hosted Backend Not Configured
+                  </span>
+                </div>
+              ) : localServerStatus?.code === 'AUTH_FAILURE' ? (
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    Auth Failed (STEM_API_KEY)
+                  </span>
+                </div>
+              ) : localServerStatus?.isProduction ? (
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    Hosted Backend Offline / Cold Starting
+                  </span>
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
@@ -909,6 +968,31 @@ export default function StemsPage() {
             )}
           </div>
         </div>
+
+        {/* Hosted Demucs Backend Not Configured Notice (Vercel) */}
+        {engineMode === 'local' && localServerStatus?.configured === false && localServerStatus?.isProduction && (
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-600/10 to-amber-500/10 border border-amber-500/30 space-y-2">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 space-y-1">
+                <h3 className="font-extrabold text-sm text-charcoal-900 dark:text-white">
+                  Hosted Demucs Backend Not Configured on Vercel
+                </h3>
+                <p className="text-xs text-muted">
+                  Your SonicForge AI frontend is currently deployed on Vercel. Deployed cloud websites cannot connect to your local PC&apos;s <code>127.0.0.1:8765</code> loopback.
+                </p>
+                <p className="text-xs text-charcoal-800 dark:text-lavender-200 pt-1">
+                  <strong>To enable Demucs separation on this live website:</strong> Deploy the backend to a hosted cloud provider (e.g. Hugging Face Spaces, Render, or RunPod) and configure <code>NEXT_PUBLIC_STEM_API_URL</code> in your Vercel Project Environment Variables.
+                </p>
+                <p className="text-[11px] text-muted pt-1">
+                  💡 In local development (<code>http://localhost:3000</code>), your local Python Demucs server works automatically.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Quota Exceeded Smart Fallback Banner */}
         {quotaExceededInfo && (
@@ -965,80 +1049,45 @@ export default function StemsPage() {
 
         {/* Active Queue / Hardware Status Banner */}
         {(pipelineStage === 'queue' || pipelineStage === 'processing') && (
-          <div className="p-5 rounded-2xl glass-panel-elevated border-champagne-400/30 flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-champagne-400/20 border border-champagne-400/40 flex items-center justify-center text-champagne-600 dark:text-champagne-300 shrink-0">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-charcoal-900 dark:text-white">
-                      {pipelineStage === 'queue' ? 'Waiting in Hardware Queue' : 'Neural Separation in Progress'}
-                    </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cream-200 dark:bg-charcoal-800 text-muted">
-                      <Clock className="w-3 h-3 inline mr-1" />
-                      {formatElapsed(elapsedSeconds)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted">
-                    {statusDetails || (engineMode === 'local' ? 'Running Demucs neural source separation locally...' : 'Allocating GPU workers on Neural Analog cluster...')}
-                  </p>
-                </div>
+          <div className="p-5 rounded-2xl glass-panel-elevated border-champagne-400/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-champagne-400/20 border border-champagne-400/40 flex items-center justify-center text-champagne-600 dark:text-champagne-300 shrink-0">
+                <Loader2 className="w-5 h-5 animate-spin" />
               </div>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                {engineMode === 'cloud' && (
-                  <button
-                    onClick={() => {
-                      handleCancelTracking();
-                      setEngineMode('local');
-                      info('Switched to Free Local Engine', 'Local Demucs engine is ready. Zero queues and 100% free.');
-                    }}
-                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950 text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                    title="Switch to Free Local Demucs Engine"
-                  >
-                    <Zap className="w-3.5 h-3.5 fill-charcoal-950" />
-                    <span>Switch to Free Local Engine</span>
-                  </button>
-                )}
-                <button
-                  onClick={handleManualRefresh}
-                  className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl glass-panel text-xs font-bold text-charcoal-800 dark:text-lavender-200 hover:border-champagne-400/40 flex items-center justify-center gap-1.5"
-                  title="Query latest job status"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Check Status</span>
-                </button>
-                <button
-                  onClick={handleCancelTracking}
-                  className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
-                  title="Stop polling this job"
-                >
-                  <XCircle className="w-3.5 h-3.5" />
-                  <span>Cancel</span>
-                </button>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-charcoal-900 dark:text-white">
+                    {pipelineStage === 'queue' ? 'Waiting in Hardware Queue' : 'Neural Separation in Progress'}
+                  </span>
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cream-200 dark:bg-charcoal-800 text-muted">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    {formatElapsed(elapsedSeconds)}
+                  </span>
+                </div>
+                <p className="text-xs text-muted">
+                  {statusDetails || 'Allocating GPU workers on Neural Analog cluster...'}
+                </p>
               </div>
             </div>
 
-            {engineMode === 'cloud' && elapsedSeconds >= 30 && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-amber-700 dark:text-amber-300">
-                <span className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
-                  Cloud queue is delayed. Neural Analog free tier has quota limits (0.2m remaining). You can cancel and run unlimited separations locally with Demucs.
-                </span>
-                <button
-                  onClick={() => {
-                    handleCancelTracking();
-                    setEngineMode('local');
-                    info('Switched to Free Local Engine', 'Local Demucs engine is online. Ready to separate.');
-                  }}
-                  className="underline font-bold hover:text-amber-900 dark:hover:text-amber-100 text-[11px] whitespace-nowrap cursor-pointer"
-                >
-                  Switch to Free Demucs →
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleManualRefresh}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl glass-panel text-xs font-bold text-charcoal-800 dark:text-lavender-200 hover:border-champagne-400/40 flex items-center justify-center gap-1.5"
+                title="Query latest job status"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Check Status</span>
+              </button>
+              <button
+                onClick={handleCancelTracking}
+                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 flex items-center justify-center gap-1.5"
+                title="Stop polling this job"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+                <span>Cancel</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1071,22 +1120,20 @@ export default function StemsPage() {
               <div className="flex items-center p-1 rounded-2xl bg-cream-100/70 dark:bg-charcoal-800/70 border border-plum-700/15 dark:border-white/5">
                 <button
                   onClick={() => setInputMode('file')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                    inputMode === 'file'
-                      ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
-                      : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                  }`}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${inputMode === 'file'
+                    ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
+                    : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                    }`}
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>Upload Audio File</span>
                 </button>
                 <button
                   onClick={() => setInputMode('link')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
-                    inputMode === 'link'
-                      ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
-                      : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                  }`}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${inputMode === 'link'
+                    ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
+                    : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                    }`}
                 >
                   <LinkIcon className="w-3.5 h-3.5" />
                   <span>Public Music Link (Suno / YouTube / Spotify)</span>
@@ -1188,11 +1235,10 @@ export default function StemsPage() {
                   <div
                     key={preset.id}
                     onClick={() => setSelectedPreset(preset.id)}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                      selectedPreset === preset.id
-                        ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
-                        : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
-                    }`}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${selectedPreset === preset.id
+                      ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
+                      : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-xs text-charcoal-900 dark:text-white">
@@ -1213,18 +1259,24 @@ export default function StemsPage() {
               onClick={handleStartStemSeparation}
               disabled={
                 engineMode === 'local'
-                  ? !selectedFile || pipelineStage === 'uploading' || pipelineStage === 'processing'
+                  ? !selectedFile ||
+                    pipelineStage === 'uploading' ||
+                    pipelineStage === 'processing' ||
+                    (localServerStatus?.configured === false && localServerStatus?.isProduction)
                   : !audioId || pipelineStage === 'queue' || pipelineStage === 'processing'
               }
-              className={`w-full py-3.5 rounded-2xl font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4 ${
-                engineMode === 'local'
-                  ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950'
-                  : 'bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950'
-              }`}
+              className={`w-full py-3.5 rounded-2xl font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4 ${engineMode === 'local'
+                ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950'
+                : 'bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950'
+                }`}
             >
               <Zap className="w-4 h-4 fill-charcoal-950" />
               <span>
-                {engineMode === 'local' ? 'Separate Stems (Free Demucs AI)' : 'Separate Stems (Cloud GPU)'}
+                {engineMode === 'local'
+                  ? localServerStatus?.configured === false && localServerStatus?.isProduction
+                    ? 'Hosted Backend Required (Vercel)'
+                    : 'Separate Stems (Demucs AI)'
+                  : 'Separate Stems (Cloud GPU)'}
               </span>
             </button>
           </div>
@@ -1291,22 +1343,20 @@ export default function StemsPage() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleToggleSolo(stem.id)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
-                        stem.solo
-                          ? 'bg-amber-400 text-charcoal-950 border-amber-500 font-extrabold'
-                          : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
-                      }`}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${stem.solo
+                        ? 'bg-amber-400 text-charcoal-950 border-amber-500 font-extrabold'
+                        : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
+                        }`}
                     >
                       SOLO
                     </button>
 
                     <button
                       onClick={() => handleToggleMute(stem.id)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
-                        stem.muted
-                          ? 'bg-rose-500 text-white border-rose-600 font-extrabold'
-                          : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
-                      }`}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${stem.muted
+                        ? 'bg-rose-500 text-white border-rose-600 font-extrabold'
+                        : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
+                        }`}
                     >
                       MUTE
                     </button>
