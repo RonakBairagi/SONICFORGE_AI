@@ -153,9 +153,14 @@ export default function StemsPage() {
             setPipelineStage('completed');
             setStems(restoredStems);
           } else {
-            setPipelineStage('queue');
-            setQueueStartTime(job.startTime || Date.now());
-            startStemPolling(job.creationId, restoredStems);
+            const isStale = Date.now() - (job.startTime || 0) > 8 * 60 * 1000;
+            if (isStale) {
+              localStorage.removeItem(LOCAL_STORAGE_KEY);
+            } else {
+              setPipelineStage('queue');
+              setQueueStartTime(job.startTime || Date.now());
+              startStemPolling(job.creationId, restoredStems);
+            }
           }
         }
       }
@@ -960,45 +965,80 @@ export default function StemsPage() {
 
         {/* Active Queue / Hardware Status Banner */}
         {(pipelineStage === 'queue' || pipelineStage === 'processing') && (
-          <div className="p-5 rounded-2xl glass-panel-elevated border-champagne-400/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-champagne-400/20 border border-champagne-400/40 flex items-center justify-center text-champagne-600 dark:text-champagne-300 shrink-0">
-                <Loader2 className="w-5 h-5 animate-spin" />
-              </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-charcoal-900 dark:text-white">
-                    {pipelineStage === 'queue' ? 'Waiting in Hardware Queue' : 'Neural Separation in Progress'}
-                  </span>
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cream-200 dark:bg-charcoal-800 text-muted">
-                    <Clock className="w-3 h-3 inline mr-1" />
-                    {formatElapsed(elapsedSeconds)}
-                  </span>
+          <div className="p-5 rounded-2xl glass-panel-elevated border-champagne-400/30 flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-champagne-400/20 border border-champagne-400/40 flex items-center justify-center text-champagne-600 dark:text-champagne-300 shrink-0">
+                  <Loader2 className="w-5 h-5 animate-spin" />
                 </div>
-                <p className="text-xs text-muted">
-                  {statusDetails || 'Allocating GPU workers on Neural Analog cluster...'}
-                </p>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-charcoal-900 dark:text-white">
+                      {pipelineStage === 'queue' ? 'Waiting in Hardware Queue' : 'Neural Separation in Progress'}
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cream-200 dark:bg-charcoal-800 text-muted">
+                      <Clock className="w-3 h-3 inline mr-1" />
+                      {formatElapsed(elapsedSeconds)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted">
+                    {statusDetails || (engineMode === 'local' ? 'Running Demucs neural source separation locally...' : 'Allocating GPU workers on Neural Analog cluster...')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {engineMode === 'cloud' && (
+                  <button
+                    onClick={() => {
+                      handleCancelTracking();
+                      setEngineMode('local');
+                      info('Switched to Free Local Engine', 'Local Demucs engine is ready. Zero queues and 100% free.');
+                    }}
+                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950 text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                    title="Switch to Free Local Demucs Engine"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-charcoal-950" />
+                    <span>Switch to Free Local Engine</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleManualRefresh}
+                  className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl glass-panel text-xs font-bold text-charcoal-800 dark:text-lavender-200 hover:border-champagne-400/40 flex items-center justify-center gap-1.5"
+                  title="Query latest job status"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Check Status</span>
+                </button>
+                <button
+                  onClick={handleCancelTracking}
+                  className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="Stop polling this job"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                onClick={handleManualRefresh}
-                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl glass-panel text-xs font-bold text-charcoal-800 dark:text-lavender-200 hover:border-champagne-400/40 flex items-center justify-center gap-1.5"
-                title="Query latest job status"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Check Status</span>
-              </button>
-              <button
-                onClick={handleCancelTracking}
-                className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/20 flex items-center justify-center gap-1.5"
-                title="Stop polling this job"
-              >
-                <XCircle className="w-3.5 h-3.5" />
-                <span>Cancel</span>
-              </button>
-            </div>
+            {engineMode === 'cloud' && elapsedSeconds >= 30 && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-amber-700 dark:text-amber-300">
+                <span className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
+                  Cloud queue is delayed. Neural Analog free tier has quota limits (0.2m remaining). You can cancel and run unlimited separations locally with Demucs.
+                </span>
+                <button
+                  onClick={() => {
+                    handleCancelTracking();
+                    setEngineMode('local');
+                    info('Switched to Free Local Engine', 'Local Demucs engine is online. Ready to separate.');
+                  }}
+                  className="underline font-bold hover:text-amber-900 dark:hover:text-amber-100 text-[11px] whitespace-nowrap cursor-pointer"
+                >
+                  Switch to Free Demucs →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
