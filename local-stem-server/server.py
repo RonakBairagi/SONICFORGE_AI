@@ -11,6 +11,9 @@ import shutil
 import asyncio
 import subprocess
 import re
+import wave
+import struct
+import math
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -75,9 +78,11 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3002",
         "*"
     ] + custom_origins,
-    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_origin_regex=r"^(https://.*\.vercel\.app|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -173,6 +178,49 @@ async def get_job_status(job_id: str):
     return job
 
 
+def get_audio_diagnostics(wav_path: Path) -> dict:
+    """Computes audio signal measurements for quality and silence detection"""
+    try:
+        with wave.open(str(wav_path), 'rb') as w:
+            channels = w.getnchannels()
+            sample_rate = w.getframerate()
+            frames = w.getnframes()
+            duration = frames / sample_rate if sample_rate > 0 else 0
+            size = wav_path.stat().st_size
+
+            # Sample slice across audio to measure real signal levels
+            start_pos = min(frames // 4, max(0, frames - sample_rate * 10))
+            w.setpos(start_pos)
+            read_frames = min(sample_rate * 10, frames - start_pos)
+            raw = w.readframes(read_frames)
+
+            if len(raw) >= 2:
+                fmt = '<' + 'h' * (len(raw) // 2)
+                samples = struct.unpack(fmt, raw)
+                peak = max(abs(s) for s in samples) / 32768.0
+                rms = math.sqrt(sum(s * s for s in samples) / len(samples)) / 32768.0
+            else:
+                peak, rms = 0.0, 0.0
+
+            return {
+                "file_size_bytes": size,
+                "duration_seconds": round(duration, 2),
+                "sample_rate": sample_rate,
+                "channels": channels,
+                "sample_count": frames * channels,
+                "is_finite": True,
+                "peak_amplitude": round(peak, 4),
+                "rms_amplitude": round(rms, 4),
+                "is_silent": peak < 0.0005,
+            }
+    except Exception as e:
+        return {
+            "file_size_bytes": wav_path.stat().st_size if wav_path.exists() else 0,
+            "error": str(e),
+            "is_silent": False,
+        }
+
+
 def scan_completed_stems(job_id: str, job_dir: Path) -> list:
     """Scans the output directory to find generated WAV stems"""
     stems = []
@@ -192,13 +240,18 @@ def scan_completed_stems(job_id: str, job_dir: Path) -> list:
             "no_vocals": "Instrumental",
         }.get(stem_name, stem_name.capitalize())
 
+        diag = get_audio_diagnostics(wav_file)
+
         stems.append({
             "stem_id": f"{job_id}_{stem_name}",
             "stem": stem_name,
             "name": display_name,
+            "filename": wav_file.name,
             "download_url": f"/stems/{job_id}/{wav_file.name}",
+            "downloadUrl": f"/api/stems/local/download/{job_id}/{wav_file.name}",
             "status": "completed",
             "size_bytes": wav_file.stat().st_size if wav_file.exists() else 0,
+            "diagnostics": diag,
         })
     return stems
 
@@ -378,22 +431,57 @@ async def download_stem(job_id: str, stem_filename: str):
     if not job_dir.exists():
         raise HTTPException(status_code=404, detail="Job directory not found")
 
-    # Locate stem file in job output
+    # Locate stem file in job output using flexible matchers:
+    # 1. Exact filename match (e.g. vocals.wav)
+    # 2. Match with .wav extension (e.g. vocals -> vocals.wav)
+    # 3. Match normalized aliases (e.g. "other instruments" -> "other.wav", "instrumental" -> "no_vocals.wav")
     found_file: Optional[Path] = None
+
+    # Step 1: exact match
     for p in job_dir.rglob(clean_filename):
         if p.is_file():
             found_file = p
             break
 
+    # Step 2: append .wav if missing
+    if not found_file and not clean_filename.lower().endswith(".wav"):
+        for p in job_dir.rglob(f"{clean_filename}.wav"):
+            if p.is_file():
+                found_file = p
+                break
+
+    # Step 3: normalized stem alias resolution
+    if not found_file:
+        normalized = clean_filename.lower().replace(".wav", "").strip()
+        alias_map = {
+            "other instruments": "other.wav",
+            "other_instruments": "other.wav",
+            "other": "other.wav",
+            "instrumental": "no_vocals.wav",
+            "no_vocals": "no_vocals.wav",
+            "backing": "no_vocals.wav",
+            "lead vocals": "vocals.wav",
+            "lead_vocals": "vocals.wav",
+            "vocals": "vocals.wav",
+            "drums": "drums.wav",
+            "bass": "bass.wav",
+        }
+        target_name = alias_map.get(normalized)
+        if target_name:
+            for p in job_dir.rglob(target_name):
+                if p.is_file():
+                    found_file = p
+                    break
+
     if not found_file or not found_file.exists():
-        raise HTTPException(status_code=404, detail=f"Stem file '{clean_filename}' not found")
+        raise HTTPException(status_code=404, detail=f"Stem file '{clean_filename}' not found in job output")
 
     return FileResponse(
         path=str(found_file),
         media_type="audio/wav",
         headers={
             "Accept-Ranges": "bytes",
-            "Content-Disposition": f'inline; filename="{clean_filename}"',
+            "Content-Disposition": f'inline; filename="{found_file.name}"',
             "Cache-Control": "public, max-age=86400",
         },
     )

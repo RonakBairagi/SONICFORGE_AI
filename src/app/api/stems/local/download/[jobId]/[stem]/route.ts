@@ -38,6 +38,7 @@ export async function GET(
       );
     }
 
+    const decodedStem = decodeURIComponent(stem);
     const rangeHeader = req.headers.get('range');
     const headers: Record<string, string> = {
       ...getStemBackendHeaders(),
@@ -46,7 +47,7 @@ export async function GET(
       headers['Range'] = rangeHeader;
     }
 
-    const res = await fetch(`${activeUrl}/stems/${jobId}/${stem}`, {
+    const res = await fetch(`${activeUrl}/stems/${jobId}/${encodeURIComponent(decodedStem)}`, {
       headers,
     });
 

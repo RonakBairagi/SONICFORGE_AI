@@ -97,12 +97,22 @@ export async function GET(req: NextRequest) {
     const data = await res.json();
 
     // Map stem artifacts to local proxy download endpoint
-    const stems = (data.stems || []).map((s: { stem_id: string; stem: string; name: string }) => ({
-      stem_id: s.stem_id,
-      stem: s.stem,
-      name: s.name,
-      download_url: `/api/stems/local/download/${jobId}/${s.stem}.wav`,
-    }));
+    const stems = (data.stems || []).map((s: { stem_id?: string; stem?: string; name?: string; filename?: string; diagnostics?: any; size_bytes?: number }) => {
+      const stemKey = s.stem || (s.name ? s.name.toLowerCase().replace(/\s+/g, '_') : 'stem');
+      const stemFile = s.filename || `${stemKey}.wav`;
+      const downloadPath = `/api/stems/local/download/${jobId}/${stemFile}`;
+      return {
+        id: s.stem_id || `${jobId}_${stemKey}`,
+        stem_id: s.stem_id || `${jobId}_${stemKey}`,
+        stem: stemKey,
+        name: s.name || stemKey,
+        filename: stemFile,
+        download_url: downloadPath,
+        downloadUrl: downloadPath,
+        diagnostics: s.diagnostics || null,
+        size_bytes: s.size_bytes || 0,
+      };
+    });
 
     const isComplete = Boolean(data.isComplete || data.status === 'completed');
     const isFailed = Boolean(data.isFailed || data.status === 'failed');
