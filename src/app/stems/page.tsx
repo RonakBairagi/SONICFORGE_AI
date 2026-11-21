@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Layers,
   Upload,
   Sparkles,
   Sliders,
@@ -10,31 +9,19 @@ import {
   Download,
   Play,
   Pause,
-  RotateCcw,
   AlertCircle,
   CheckCircle2,
   Loader2,
-  Radio,
   FileAudio,
   Zap,
   Link as LinkIcon,
-  HelpCircle,
-  VolumeX,
   Clock,
   RefreshCw,
   XCircle,
-  Cpu,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { useToast } from '@/context/ToastContext';
 import { audioBufferToWav } from '@/lib/wav-encoder';
-import {
-  isHuggingFaceSpaceTarget,
-  getCleanGradioSpaceTarget,
-  checkGradioSpaceHealth,
-  separateWithGradioSpace,
-} from '@/lib/gradio-stem-adapter';
-import { separateAudioInBrowser } from '@/lib/browser-dsp-separator';
 
 interface StemArtifact {
   id: string;
@@ -83,56 +70,7 @@ export default function StemsPage() {
   const [publicUrl, setPublicUrl] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<string>('4_tracks');
 
-  // Engine Mode: 'cloud' (Neural Analog) | 'local' (Demucs AI) | 'browser' (Client-side DSP)
-  const [engineMode, setEngineMode] = useState<'cloud' | 'local' | 'browser'>('local');
-  const [localServerStatus, setLocalServerStatus] = useState<{
-    online: boolean;
-    configured?: boolean;
-    isProduction?: boolean;
-    device?: string;
-    deviceName?: string;
-    model?: string;
-    launchHelp?: string;
-    code?: string;
-    message?: string;
-  } | null>(null);
-  const [quotaExceededInfo, setQuotaExceededInfo] = useState<{
-    isQuota: boolean;
-    message: string;
-  } | null>(null);
-
-  // Periodically check Demucs server health (local, hosted FastAPI, or Hugging Face Space)
-  useEffect(() => {
-    const checkLocalHealth = async () => {
-      try {
-        const spaceTarget = getCleanGradioSpaceTarget();
-        if (spaceTarget && isHuggingFaceSpaceTarget(spaceTarget)) {
-          const gh = await checkGradioSpaceHealth();
-          setLocalServerStatus({
-            online: gh.online,
-            configured: true,
-            isProduction: true,
-            deviceName: gh.deviceName || (gh.zeroGpuEnabled ? 'Hugging Face ZeroGPU' : 'Hugging Face Space'),
-            device: gh.device || 'gpu',
-            model: gh.model || 'htdemucs',
-            message: gh.error,
-          });
-          return;
-        }
-
-        const res = await fetch('/api/stems/local/health');
-        const data = await res.json().catch(() => ({ online: false }));
-        setLocalServerStatus(data);
-      } catch {
-        setLocalServerStatus({ online: false });
-      }
-    };
-    checkLocalHealth();
-    const interval = setInterval(checkLocalHealth, 8000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Multi-stage processing state
+  // Multi-stage processing state:
   // 'idle' | 'uploading' | 'ingesting' | 'ready_to_split' | 'queue' | 'processing' | 'completed' | 'failed'
   const [pipelineStage, setPipelineStage] = useState<string>('idle');
   const [statusDetails, setStatusDetails] = useState<string>('');
@@ -144,7 +82,6 @@ export default function StemsPage() {
 
   // Stem job tracking
   const [creationId, setCreationId] = useState<string | null>(null);
-  const [queueStartTime, setQueueStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
   // Result stems
@@ -152,12 +89,37 @@ export default function StemsPage() {
   const [isMasterPlaying, setIsMasterPlaying] = useState<boolean>(false);
   const [masterVolume, setMasterVolume] = useState<number>(1.0);
 
+  // Background Demucs engine status
+  const [isLocalOnline, setIsLocalOnline] = useState<boolean>(false);
+
   // Synchronized audio mixer references
   const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const elapsedTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
   const consecutiveErrorsRef = useRef<number>(0);
+
+  // Check local Demucs backend health silently in background
+  useEffect(() => {
+    let isMounted = true;
+    const checkLocal = async () => {
+      try {
+        const res = await fetch('/api/stems/local/health');
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          setIsLocalOnline(Boolean(data.online));
+        }
+      } catch {
+        if (isMounted) setIsLocalOnline(false);
+      }
+    };
+    checkLocal();
+    const interval = setInterval(checkLocal, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Restore saved job from localStorage on mount
   useEffect(() => {
@@ -178,8 +140,11 @@ export default function StemsPage() {
             setStems(restoredStems);
           } else {
             setPipelineStage('queue');
-            setQueueStartTime(job.startTime || Date.now());
-            startStemPolling(job.creationId, restoredStems);
+            if (job.isLocal || String(job.creationId).startsWith('job_')) {
+              startLocalStemPolling(job.creationId);
+            } else {
+              startStemPolling(job.creationId, restoredStems);
+            }
           }
         }
       }
@@ -218,14 +183,13 @@ export default function StemsPage() {
       return file;
     }
 
-    setStatusDetails(`Optimizing ${(file.size / (1024 * 1024)).toFixed(1)} MB audio to meet serverless limits...`);
+    setStatusDetails(`Optimizing ${(file.size / (1024 * 1024)).toFixed(1)} MB audio for transfer...`);
     try {
       const arrayBuffer = await file.arrayBuffer();
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const audioCtx = new AudioCtx();
       const decodedBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-      // Downmix or resample into 16-bit PCM WAV using audioBufferToWav
       const wavBlob = audioBufferToWav(decodedBuffer);
       audioCtx.close();
 
@@ -286,18 +250,31 @@ export default function StemsPage() {
         const formData = new FormData();
         formData.append('audio', fileToUpload);
 
-        const res = await fetch('/api/stems/split', {
-          method: 'POST',
-          body: formData,
-        });
+        try {
+          const res = await fetch('/api/stems/split', {
+            method: 'POST',
+            body: formData,
+          });
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({ error: `Upload error (${res.status})` }));
-          throw new Error(errData.error || `Upload failed with status ${res.status}`);
+          if (res.ok) {
+            const data = await res.json();
+            audioAssetId = data.audioId;
+          } else {
+            // If cloud ingestion fails but local engine is active, mark asset ready for local engine
+            if (isLocalOnline) {
+              audioAssetId = `local_${Date.now()}`;
+            } else {
+              const errData = await res.json().catch(() => ({ error: `Upload error (${res.status})` }));
+              throw new Error(errData.error || `Upload failed with status ${res.status}`);
+            }
+          }
+        } catch (uploadErr) {
+          if (isLocalOnline) {
+            audioAssetId = `local_${Date.now()}`;
+          } else {
+            throw uploadErr;
+          }
         }
-
-        const data = await res.json();
-        audioAssetId = data.audioId;
       } else {
         setStatusDetails('Importing track from public source into Neural Analog...');
         const res = await fetch('/api/stems/link', {
@@ -317,6 +294,15 @@ export default function StemsPage() {
       }
 
       setAudioId(audioAssetId);
+
+      // If local asset, ready immediately
+      if (audioAssetId.startsWith('local_')) {
+        setPipelineStage('ready_to_split');
+        setStatusDetails('Audio asset ready. Choose separation preset and begin.');
+        success('Audio Ready', 'Track imported successfully.');
+        return;
+      }
+
       setPipelineStage('ingesting');
       setStatusDetails('Verifying audio readiness on Neural Analog...');
 
@@ -331,6 +317,13 @@ export default function StemsPage() {
           const statusData = await statusRes.json();
           if (statusData.isFailed) {
             clearInterval(pollAudioInterval);
+            if (isLocalOnline && selectedFile) {
+              setAudioId(`local_${Date.now()}`);
+              setPipelineStage('ready_to_split');
+              setStatusDetails('Audio asset ready. Choose separation preset and begin.');
+              success('Audio Ready', 'Track imported successfully.');
+              return;
+            }
             setPipelineStage('failed');
             setErrorMessage(statusData.errorMessage || 'Audio file analysis rejected by provider.');
             error('Ingestion Failed', statusData.errorMessage);
@@ -344,6 +337,13 @@ export default function StemsPage() {
             success('Audio Ready', 'Track imported successfully.');
           } else if (attempts > 20) {
             clearInterval(pollAudioInterval);
+            if (isLocalOnline && selectedFile) {
+              setAudioId(`local_${Date.now()}`);
+              setPipelineStage('ready_to_split');
+              setStatusDetails('Audio asset ready. Choose separation preset and begin.');
+              success('Audio Ready', 'Track imported successfully.');
+              return;
+            }
             setPipelineStage('failed');
             setErrorMessage('Audio ingestion timed out. Please try again.');
           }
@@ -352,6 +352,13 @@ export default function StemsPage() {
         }
       }, 1500);
     } catch (err: unknown) {
+      if (isLocalOnline && selectedFile) {
+        setAudioId(`local_${Date.now()}`);
+        setPipelineStage('ready_to_split');
+        setStatusDetails('Audio asset ready. Choose separation preset and begin.');
+        success('Audio Ready', 'Track imported successfully.');
+        return;
+      }
       setPipelineStage('failed');
       const msg = err instanceof Error ? err.message : 'Audio upload failed';
       setErrorMessage(msg);
@@ -359,73 +366,152 @@ export default function StemsPage() {
     }
   };
 
-  // In-Browser Client-Side Separation Handler (Zero Backend Required)
-  const handleStartBrowserSeparation = async () => {
-    if (!selectedFile) {
-      warning('No audio file', 'Please select or drop an audio file first.');
-      return;
-    }
-
-    isSubmittingRef.current = true;
+  // Local Demucs engine processing path
+  const runLocalSeparation = async () => {
+    if (!selectedFile) return;
+    setStatusDetails('Streaming audio to Demucs neural engine...');
     setPipelineStage('processing');
-    setElapsedSeconds(0);
-    setStatusDetails('Decoding audio stream in browser...');
-    setErrorMessage(null);
-    setQuotaExceededInfo(null);
 
     try {
-      const res = await separateAudioInBrowser(selectedFile, (msg) => {
-        setStatusDetails(msg);
+      const formData = new FormData();
+      formData.append('audio', selectedFile);
+      formData.append('preset', selectedPreset);
+
+      const res = await fetch('/api/stems/local/separate', {
+        method: 'POST',
+        body: formData,
       });
 
-      setCreationId(res.jobId);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({ error: `Engine error (${res.status})` }));
+        throw new Error(errJson.error || 'Demucs separation failed');
+      }
+
+      const data = await res.json();
+      const localJobId = data.jobId;
+      setCreationId(localJobId);
       setTrackTitle(selectedFile.name);
-      setPipelineStage('completed');
-      setStatusDetails('Separation complete! Lossless stems ready.');
 
-      const browserStems: StemArtifact[] = [
-        {
-          id: `${res.jobId}_vocals`,
-          name: 'Lead Vocals',
-          downloadUrl: res.vocalsUrl,
-          volume: 1.0,
-          muted: false,
-          solo: false,
-        },
-        {
-          id: `${res.jobId}_instrumental`,
-          name: 'Instrumental Backing',
-          downloadUrl: res.instrumentalUrl,
-          volume: 1.0,
-          muted: false,
-          solo: false,
-        },
-      ];
+      const jobRecord = {
+        creationId: localJobId,
+        audioId: audioId || localJobId,
+        trackTitle: selectedFile.name,
+        preset: selectedPreset,
+        stems: [],
+        startTime: Date.now(),
+        isComplete: false,
+        isLocal: true,
+      };
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(jobRecord));
 
-      setStems(browserStems);
-      success('Stems Ready!', 'In-browser DSP finished separating vocals and backing track.');
+      startLocalStemPolling(localJobId);
     } catch (err: unknown) {
       setPipelineStage('failed');
-      const msg = err instanceof Error ? err.message : 'In-browser separation failed';
+      const msg = err instanceof Error ? err.message : 'Local stem separation failed';
       setErrorMessage(msg);
-      error('Browser DSP Error', msg);
+      error('Demucs Error', msg);
     } finally {
       isSubmittingRef.current = false;
     }
   };
 
-  // Stage 2: Trigger Stem Separation (Cloud, Local, or Browser)
+  // Polling for Local Demucs engine
+  const startLocalStemPolling = (jobId: string) => {
+    let delay = 2500;
+    let pollCount = 0;
+    consecutiveErrorsRef.current = 0;
+
+    const poll = async () => {
+      pollCount++;
+      try {
+        const res = await fetch(`/api/stems/local/status?jobId=${jobId}`);
+        if (!res.ok) {
+          consecutiveErrorsRef.current++;
+          if (consecutiveErrorsRef.current >= 6) {
+            setPipelineStage('failed');
+            const errMsg = 'Connection to Demucs engine interrupted.';
+            setErrorMessage(errMsg);
+            error('Demucs Error', errMsg);
+            return;
+          }
+          scheduleNext(delay);
+          return;
+        }
+
+        consecutiveErrorsRef.current = 0;
+        const data = await res.json();
+
+        if (data.status === 'failed') {
+          setPipelineStage('failed');
+          setErrorMessage(data.error || 'Stem separation failed on Demucs engine.');
+          error('Job Failed', data.error || 'Separation failed');
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          return;
+        }
+
+        if (data.statusDetails) {
+          setStatusDetails(data.statusDetails);
+        }
+
+        if (data.status === 'completed' && Array.isArray(data.stems) && data.stems.length > 0) {
+          setPipelineStage('completed');
+          setStatusDetails('Separation complete! Lossless stems ready.');
+
+          const formattedStems: StemArtifact[] = data.stems.map((s: { id?: string; name: string; downloadUrl?: string }) => ({
+            id: s.id || `${jobId}_${s.name.toLowerCase()}`,
+            name: s.name,
+            downloadUrl: s.downloadUrl || `/api/stems/local/download/${jobId}/${s.name.toLowerCase()}`,
+            volume: 1.0,
+            muted: false,
+            solo: false,
+          }));
+
+          setStems(formattedStems);
+
+          const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (saved) {
+            try {
+              const parsed = JSON.parse(saved);
+              parsed.isComplete = true;
+              parsed.stems = formattedStems;
+              localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+            } catch (e) {
+              console.warn(e);
+            }
+          }
+
+          success('Stems Ready!', 'Demucs engine finished separating all audio stems.');
+          return;
+        }
+
+        if (data.status === 'processing') {
+          setPipelineStage('processing');
+        }
+
+        if (pollCount > 10) delay = 3500;
+        scheduleNext(delay);
+      } catch (err) {
+        console.warn('Local poll error:', err);
+        consecutiveErrorsRef.current++;
+        if (consecutiveErrorsRef.current >= 6) {
+          setPipelineStage('failed');
+          setErrorMessage('Network connection lost while tracking local stem job.');
+          return;
+        }
+        scheduleNext(delay);
+      }
+    };
+
+    const scheduleNext = (ms: number) => {
+      pollTimerRef.current = setTimeout(poll, ms);
+    };
+
+    scheduleNext(1500);
+  };
+
+  // Stage 2: Trigger Stem Separation
   const handleStartStemSeparation = async () => {
     if (isSubmittingRef.current) return;
-
-    if (engineMode === 'browser') {
-      return handleStartBrowserSeparation();
-    }
-
-    if (engineMode === 'local') {
-      return handleStartLocalSeparation();
-    }
-
     if (!audioId) {
       warning('Audio not ready', 'Please import or upload an audio track first.');
       return;
@@ -437,7 +523,11 @@ export default function StemsPage() {
     setElapsedSeconds(0);
     setStatusDetails('Submitting stem separation job to Neural Analog hardware queue...');
     setErrorMessage(null);
-    setQuotaExceededInfo(null);
+
+    // If local Demucs engine is online and audio file is selected, process directly
+    if (isLocalOnline && selectedFile) {
+      return runLocalSeparation();
+    }
 
     try {
       const res = await fetch('/api/stems/create', {
@@ -449,23 +539,9 @@ export default function StemsPage() {
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({ error: `Failed with status ${res.status}` }));
 
-        // Detect Neural Analog processing quota exhaustion
-        if (
-          res.status === 403 ||
-          errJson.isQuotaError ||
-          (errJson.error && errJson.error.toLowerCase().includes('minutes')) ||
-          (errJson.error && errJson.error.toLowerCase().includes('quota'))
-        ) {
-          setQuotaExceededInfo({
-            isQuota: true,
-            message:
-              errJson.error ||
-              'Neural Analog processing minutes exhausted (Cost: 0.5m, Remaining: 0.2m).',
-          });
-          setPipelineStage('ready_to_split');
-          setStatusDetails('Cloud quota reached. Switch to Free Local Engine below.');
-          warning('Cloud Quota Depleted', 'Switch to the Free Local Engine to separate without fees.');
-          return;
+        // Gracefully fallback to local Demucs engine if available
+        if (selectedFile) {
+          return runLocalSeparation();
         }
 
         throw new Error(errJson.error || 'Failed to start separation');
@@ -479,8 +555,8 @@ export default function StemsPage() {
         selectedPreset === '2_tracks'
           ? ['Vocals', 'Instrumental']
           : selectedPreset === 'lead_back'
-            ? ['Lead Vocals', 'Backing Vocals']
-            : ['Vocals', 'Drums', 'Bass', 'Other'];
+          ? ['Lead Vocals', 'Backing Vocals']
+          : ['Vocals', 'Drums', 'Bass', 'Other'];
 
       let formattedStems: StemArtifact[] = [];
 
@@ -515,12 +591,15 @@ export default function StemsPage() {
         stems: formattedStems,
         startTime: Date.now(),
         isComplete: false,
-        engine: 'cloud',
+        isLocal: false,
       };
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(jobRecord));
 
       startStemPolling(newCreationId, formattedStems);
     } catch (err: unknown) {
+      if (selectedFile) {
+        return runLocalSeparation();
+      }
       setPipelineStage('failed');
       const msg = err instanceof Error ? err.message : 'Stem separation failed';
       setErrorMessage(msg);
@@ -530,278 +609,30 @@ export default function StemsPage() {
     }
   };
 
-  // Demucs Stem Separation Handler (Local or Hosted)
-  const handleStartLocalSeparation = async () => {
-    if (!selectedFile) {
-      warning('No audio file', 'Please select or drop an audio file first.');
-      return;
-    }
-
-    if (localServerStatus?.configured === false && localServerStatus?.isProduction) {
-      const msg = 'Hosted Demucs backend is not configured in Vercel. Set NEXT_PUBLIC_STEM_API_URL in project environment variables.';
-      setErrorMessage(msg);
-      error('Configuration Required', msg);
-      return;
-    }
-
-    isSubmittingRef.current = true;
-    consecutiveErrorsRef.current = 0;
-    setPipelineStage('uploading');
-    setElapsedSeconds(0);
-    setStatusDetails('Streaming audio to Demucs neural engine...');
-    setErrorMessage(null);
-    setQuotaExceededInfo(null);
-
-    try {
-      const spaceTarget = getCleanGradioSpaceTarget();
-
-      // Path A: Hugging Face Gradio Space (Direct client-to-Space streaming via @gradio/client)
-      // Bypasses Vercel 4.5 MB serverless limit and function timeouts
-      if (spaceTarget && isHuggingFaceSpaceTarget(spaceTarget)) {
-        setStatusDetails('Connecting to Hugging Face Demucs Space...');
-        setPipelineStage('processing');
-
-        const gradioResult = await separateWithGradioSpace(
-          selectedFile,
-          selectedPreset,
-          (statusText) => setStatusDetails(statusText)
-        );
-
-        setCreationId(gradioResult.jobId);
-        setTrackTitle(selectedFile.name);
-        setPipelineStage('completed');
-        setStatusDetails('Separation complete! Lossless stems ready.');
-
-        const formattedStems: StemArtifact[] =
-          selectedPreset === '2_tracks'
-            ? [
-                {
-                  id: `${gradioResult.jobId}_vocals`,
-                  name: 'Vocals',
-                  downloadUrl: gradioResult.vocalsUrl,
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                },
-                {
-                  id: `${gradioResult.jobId}_instrumental`,
-                  name: 'Instrumental',
-                  downloadUrl: gradioResult.instrumentalUrl || gradioResult.vocalsUrl,
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                },
-              ]
-            : [
-                {
-                  id: `${gradioResult.jobId}_vocals`,
-                  name: 'Vocals',
-                  downloadUrl: gradioResult.vocalsUrl,
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                },
-                {
-                  id: `${gradioResult.jobId}_drums`,
-                  name: 'Drums',
-                  downloadUrl: gradioResult.drumsUrl || '',
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                },
-                {
-                  id: `${gradioResult.jobId}_bass`,
-                  name: 'Bass',
-                  downloadUrl: gradioResult.bassUrl || '',
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                },
-                {
-                  id: `${gradioResult.jobId}_other`,
-                  name: 'Other Instruments',
-                  downloadUrl: gradioResult.otherUrl || '',
-                  volume: 1.0,
-                  muted: false,
-                  solo: false,
-                },
-              ].filter((s) => Boolean(s.downloadUrl));
-
-        setStems(formattedStems);
-        success('Stems Ready!', 'Demucs ZeroGPU finished separating all stems.');
-        return;
-      }
-
-      // Path B: Local Demucs Server or Hosted FastAPI Server
-      const formData = new FormData();
-      formData.append('audio', selectedFile);
-      formData.append('preset', selectedPreset);
-
-      const res = await fetch('/api/stems/local/separate', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({ error: `Engine error (${res.status})` }));
-        const code = errJson.code;
-
-        if (code === 'MISSING_PRODUCTION_BACKEND') {
-          throw new Error('Hosted Demucs backend is not configured in Vercel. Please set NEXT_PUBLIC_STEM_API_URL in project settings.');
-        }
-        if (code === 'AUTH_FAILURE') {
-          throw new Error('Authentication failed connecting to Demucs backend. Check STEM_API_KEY.');
-        }
-        if (code === 'PAYLOAD_TOO_LARGE') {
-          throw new Error('Audio file exceeds the maximum allowed upload limit.');
-        }
-        if (code === 'QUOTA_EXCEEDED') {
-          throw new Error('Demucs backend rate limit or concurrency quota reached. Please try again shortly.');
-        }
-        throw new Error(errJson.error || 'Failed to start Demucs separation');
-      }
-
-      const data = await res.json();
-      const jobId = data.jobId || data.creationId;
-      setCreationId(jobId);
-      setTrackTitle(selectedFile.name);
-      setPipelineStage('processing');
-      setStatusDetails(
-        localServerStatus?.isProduction
-          ? 'Demucs neural source separation in progress on hosted GPU...'
-          : 'Demucs neural source separation in progress on your machine...'
-      );
-
-      startLocalStemPolling(jobId);
-    } catch (err: unknown) {
-      setPipelineStage('failed');
-      const msg = err instanceof Error ? err.message : 'Separation failed';
-      setErrorMessage(msg);
-      error('Engine Error', msg);
-    } finally {
-      isSubmittingRef.current = false;
-    }
-  };
-
-  // Polling for Demucs Engine (Local or Hosted)
-  const startLocalStemPolling = (jobId: string) => {
-    let delay = 2000;
-    let pollCount = 0;
-    consecutiveErrorsRef.current = 0;
-
-    const poll = async () => {
-      pollCount++;
-      try {
-        const res = await fetch(`/api/stems/local/status?jobId=${jobId}`);
-
-        if (res.status === 401 || res.status === 403) {
-          setPipelineStage('failed');
-          const errMsg = 'Demucs backend authentication failed (401/403). Verify STEM_API_KEY.';
-          setErrorMessage(errMsg);
-          error('Authentication Error', errMsg);
-          return;
-        }
-
-        if (res.status === 429) {
-          setPipelineStage('failed');
-          const errMsg = 'Demucs backend concurrency quota exhausted. Please try again later.';
-          setErrorMessage(errMsg);
-          error('Quota Exceeded', errMsg);
-          return;
-        }
-
-        if (!res.ok) {
-          consecutiveErrorsRef.current++;
-          if (consecutiveErrorsRef.current >= 4) {
-            setPipelineStage('failed');
-            const errMsg = localServerStatus?.isProduction
-              ? 'Lost connection to hosted Demucs engine. The server may have restarted.'
-              : 'Failed to communicate with local Demucs engine. Please verify local-stem-server is running on http://127.0.0.1:8765.';
-            setErrorMessage(errMsg);
-            error('Engine Error', errMsg);
-            return;
-          }
-          scheduleNext(delay);
-          return;
-        }
-
-        consecutiveErrorsRef.current = 0;
-        const data = await res.json();
-
-        if (data.isFailed || data.status === 'failed') {
-          setPipelineStage('failed');
-          setErrorMessage(data.error || 'Demucs separation failed.');
-          error('Job Failed', data.error);
-          return;
-        }
-
-        if (data.statusDetails) {
-          setStatusDetails(data.statusDetails);
-        }
-
-        if (data.isComplete || data.status === 'completed') {
-          setPipelineStage('completed');
-          setStatusDetails('Separation complete! Lossless stems ready.');
-          const formattedStems: StemArtifact[] = (data.stems || []).map(
-            (s: { stem_id: string; stem?: string; name?: string; download_url?: string }, idx: number) => ({
-              id: s.stem_id,
-              name: s.name || (s.stem ? s.stem.charAt(0).toUpperCase() + s.stem.slice(1) : `Stem ${idx + 1}`),
-              downloadUrl: s.download_url || `/api/stems/local/download/${jobId}/${s.stem}.wav`,
-              volume: 1.0,
-              muted: false,
-              solo: false,
-            })
-          );
-          setStems(formattedStems);
-          success('Stems Ready!', 'Demucs finished separating all stems.');
-          return;
-        }
-
-        scheduleNext(delay);
-      } catch (err) {
-        console.warn('Demucs poll error:', err);
-        consecutiveErrorsRef.current++;
-        if (consecutiveErrorsRef.current >= 4) {
-          setPipelineStage('failed');
-          setErrorMessage('Connection to Demucs engine lost.');
-          return;
-        }
-        scheduleNext(delay);
-      }
-    };
-
-    const scheduleNext = (ms: number) => {
-      pollTimerRef.current = setTimeout(poll, ms);
-    };
-
-    scheduleNext(1500);
-  };
-
   // Intelligent polling with gradual backoff
   const startStemPolling = (jobId: string, currentStems: StemArtifact[]) => {
     let delay = 3000;
     let pollCount = 0;
     consecutiveErrorsRef.current = 0;
 
-    // Fallback stems if empty
     const defaultLabels =
       selectedPreset === '2_tracks'
         ? ['Vocals', 'Instrumental']
         : selectedPreset === 'lead_back'
-          ? ['Lead Vocals', 'Backing Vocals']
-          : ['Vocals', 'Drums', 'Bass', 'Other'];
+        ? ['Lead Vocals', 'Backing Vocals']
+        : ['Vocals', 'Drums', 'Bass', 'Other'];
 
     const activeStems: StemArtifact[] =
       currentStems && currentStems.length > 0
         ? currentStems
         : defaultLabels.map((lbl, idx) => ({
-          id: `${jobId}_${idx}`,
-          name: lbl,
-          downloadUrl: `/api/stems/download/${jobId}`,
-          volume: 1.0,
-          muted: false,
-          solo: false,
-        }));
+            id: `${jobId}_${idx}`,
+            name: lbl,
+            downloadUrl: `/api/stems/download/${jobId}`,
+            volume: 1.0,
+            muted: false,
+            solo: false,
+          }));
 
     const poll = async () => {
       pollCount++;
@@ -846,7 +677,6 @@ export default function StemsPage() {
           setStatusDetails('Separation complete! Lossless stems ready.');
           setStems(activeStems);
 
-          // Update storage with completed status
           const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
           if (saved) {
             try {
@@ -863,7 +693,6 @@ export default function StemsPage() {
           return;
         }
 
-        // Increase polling interval gradually up to 10s to respect rate limits
         if (pollCount > 5) delay = 5000;
         if (pollCount > 15) delay = 8000;
         if (pollCount > 30) delay = 10000;
@@ -890,45 +719,31 @@ export default function StemsPage() {
 
   const handleManualRefresh = async () => {
     if (!creationId) return;
-    info('Checking Status', 'Querying Neural Analog processing queue...');
+    info('Checking Status', 'Querying processing queue...');
     try {
-      const res = await fetch(`/api/stems/status?creationId=${creationId}`);
+      const isLocal = String(creationId).startsWith('job_');
+      const url = isLocal
+        ? `/api/stems/local/status?jobId=${creationId}`
+        : `/api/stems/status?creationId=${creationId}`;
+
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.statusDetails) setStatusDetails(data.statusDetails);
-        if (data.isComplete) {
+        if (data.isComplete || data.status === 'completed') {
           setPipelineStage('completed');
-          setStatusDetails('Separation complete! Lossless stems ready.');
           if (stems.length === 0) {
-            let loadedStems: StemArtifact[] = [];
             const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
             if (saved) {
               try {
                 const parsed = JSON.parse(saved);
                 if (Array.isArray(parsed.stems) && parsed.stems.length > 0) {
-                  loadedStems = parsed.stems;
+                  setStems(parsed.stems);
                 }
               } catch (e) {
                 console.warn(e);
               }
             }
-            if (loadedStems.length === 0) {
-              const defaultLabels =
-                selectedPreset === '2_tracks'
-                  ? ['Vocals', 'Instrumental']
-                  : selectedPreset === 'lead_back'
-                    ? ['Lead Vocals', 'Backing Vocals']
-                    : ['Vocals', 'Drums', 'Bass', 'Other'];
-              loadedStems = defaultLabels.map((lbl, idx) => ({
-                id: `${creationId}_${idx}`,
-                name: lbl,
-                downloadUrl: `/api/stems/download/${creationId}`,
-                volume: 1.0,
-                muted: false,
-                solo: false,
-              }));
-            }
-            setStems(loadedStems);
           }
           success('Completed!', 'Stem separation finished.');
         }
@@ -1036,7 +851,7 @@ export default function StemsPage() {
           <div className="relative z-10 max-w-2xl">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-champagne-400/15 border border-champagne-400/30 text-champagne-700 dark:text-champagne-300 text-xs font-bold mb-3">
               <Sparkles className="w-3.5 h-3.5" />
-              Dual-Engine Architecture • Cloud GPU & Free Local Demucs AI
+              Neural Analog RoFormer Architecture • Asynchronous Studio
             </span>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-charcoal-900 dark:text-white">
               Neural Stem Lab
@@ -1047,194 +862,12 @@ export default function StemsPage() {
           </div>
         </div>
 
-        {/* Engine Mode Switcher */}
-        <div className="glass-panel rounded-2xl p-2.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 p-1 bg-cream-100/70 dark:bg-charcoal-800/70 rounded-xl border border-plum-700/15 dark:border-white/5 flex-1 max-w-xl">
-            <button
-              onClick={() => {
-                setEngineMode('local');
-                setErrorMessage(null);
-              }}
-              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${engineMode === 'local'
-                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-emerald-500/40'
-                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                }`}
-            >
-              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Demucs AI (4 Stems)</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-extrabold hidden sm:inline">
-                STUDIO
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                setEngineMode('browser');
-                setSelectedPreset('2_tracks');
-                setErrorMessage(null);
-              }}
-              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${engineMode === 'browser'
-                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-cyan-500/40'
-                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
-              <span>In-Browser DSP (2 Stems)</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-extrabold hidden sm:inline">
-                ZERO BACKEND
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                setEngineMode('cloud');
-                setErrorMessage(null);
-                setQuotaExceededInfo(null);
-              }}
-              className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${engineMode === 'cloud'
-                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
-                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                }`}
-            >
-              <Radio className="w-3.5 h-3.5 text-champagne-500" />
-              <span>Cloud API</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 px-2">
-            {engineMode === 'browser' ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-600 dark:text-cyan-400">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
-                In-Browser DSP Active (100% Client-Side • Zero Setup)
-              </span>
-            ) : engineMode === 'local' ? (
-              localServerStatus?.online ? (
-                <span className="inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Demucs Online ({localServerStatus.deviceName || (localServerStatus.isProduction ? 'Hosted GPU' : 'Host CPU')})
-                </span>
-              ) : localServerStatus?.configured === false && localServerStatus?.isProduction ? (
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Hosted Backend Not Configured
-                  </span>
-                </div>
-              ) : localServerStatus?.code === 'AUTH_FAILURE' ? (
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Auth Failed (STEM_API_KEY)
-                  </span>
-                </div>
-              ) : localServerStatus?.isProduction ? (
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Hosted Backend Offline / Cold Starting
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Local Server Offline
-                  </span>
-                  <span className="text-[11px] text-muted hidden md:inline">
-                    (Run <code>local-stem-server/start.bat</code>)
-                  </span>
-                </div>
-              )
-            ) : (
-              <span className="text-xs text-muted">
-                Cloud GPU Processing • High Speed
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Hosted Demucs Backend Not Configured Notice (Vercel) */}
-        {engineMode === 'local' && localServerStatus?.configured === false && localServerStatus?.isProduction && (
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-600/10 to-amber-500/10 border border-amber-500/30 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div className="flex-1 space-y-1">
-                <h3 className="font-extrabold text-sm text-charcoal-900 dark:text-white">
-                  Demucs Backend Not Connected on Vercel
-                </h3>
-                <p className="text-xs text-muted">
-                  Your SonicForge AI frontend is deployed on Vercel. Deployed cloud websites cannot reach your laptop&apos;s <code>127.0.0.1:8765</code> directly.
-                </p>
-                <div className="pt-2 flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => {
-                      setEngineMode('browser');
-                      setSelectedPreset('2_tracks');
-                      setErrorMessage(null);
-                      info('Switched to In-Browser DSP', 'Separating directly in your browser without backend servers.');
-                    }}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-charcoal-950 font-extrabold text-xs shadow-md flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Use In-Browser Separator (Zero Setup) →</span>
-                  </button>
-                  <span className="text-xs text-muted">
-                    Or run SonicForge AI locally with <code>npm run dev</code> for full 4-stem Demucs AI.
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Quota Exceeded Smart Fallback Banner */}
-        {quotaExceededInfo && (
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 border border-amber-500/40 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div className="flex-1 space-y-1">
-                <h3 className="font-extrabold text-sm text-charcoal-900 dark:text-white">
-                  Cloud Processing Quota Depleted
-                </h3>
-                <p className="text-xs text-muted">
-                  {quotaExceededInfo.message}
-                </p>
-                <p className="text-xs text-charcoal-800 dark:text-lavender-200 pt-1">
-                  Switch to our <strong>Free Local Engine</strong> powered by Meta AI's open-source <strong>Demucs</strong> to separate this track on your computer without paid APIs or quota limits.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 pl-12">
-              <button
-                onClick={() => {
-                  setEngineMode('local');
-                  setQuotaExceededInfo(null);
-                  setErrorMessage(null);
-                  success('Switched to Free Local Engine', 'Your selected track is ready for free Demucs separation.');
-                }}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950 font-extrabold text-xs shadow-md flex items-center gap-1.5 cursor-pointer"
-              >
-                <Zap className="w-3.5 h-3.5 fill-charcoal-950" />
-                <span>Switch to Free Local Engine</span>
-              </button>
-              <button
-                onClick={() => setQuotaExceededInfo(null)}
-                className="px-3 py-2 rounded-xl text-xs text-muted hover:text-charcoal-900 dark:hover:text-white"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Error Alert Banner */}
         {errorMessage && (
           <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-start gap-3 text-rose-700 dark:text-rose-300">
             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="flex-1 space-y-1">
-              <p className="font-bold text-sm">Action Notice</p>
+              <p className="font-bold text-sm">Action Failed</p>
               <p className="text-xs opacity-90">{errorMessage}</p>
             </div>
           </div>
@@ -1293,54 +926,40 @@ export default function StemsPage() {
                 <span className="w-5 h-5 rounded-full bg-champagne-400/20 text-champagne-600 dark:text-champagne-400 text-xs flex items-center justify-center font-bold">1</span>
                 Import Audio Source
               </h2>
-              {engineMode === 'browser' ? (
-                selectedFile && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> File Ready (In-Browser DSP)
-                  </span>
-                )
-              ) : engineMode === 'local' ? (
-                selectedFile && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> File Ready (Local Demucs)
-                  </span>
-                )
-              ) : (
-                audioId && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Asset Ready
-                  </span>
-                )
+              {audioId && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Asset Ready
+                </span>
               )}
             </div>
 
-            {/* Mode Selector Tabs (Cloud only has link support) */}
-            {engineMode === 'cloud' && (
-              <div className="flex items-center p-1 rounded-2xl bg-cream-100/70 dark:bg-charcoal-800/70 border border-plum-700/15 dark:border-white/5">
-                <button
-                  onClick={() => setInputMode('file')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${inputMode === 'file'
+            {/* Mode Selector Tabs */}
+            <div className="flex items-center p-1 rounded-2xl bg-cream-100/70 dark:bg-charcoal-800/70 border border-plum-700/15 dark:border-white/5">
+              <button
+                onClick={() => setInputMode('file')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  inputMode === 'file'
                     ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
                     : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                    }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Audio File</span>
-                </button>
-                <button
-                  onClick={() => setInputMode('link')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${inputMode === 'link'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload Audio File</span>
+              </button>
+              <button
+                onClick={() => setInputMode('link')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+                  inputMode === 'link'
                     ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
                     : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                    }`}
-                >
-                  <LinkIcon className="w-3.5 h-3.5" />
-                  <span>Public Music Link (Suno / YouTube / Spotify)</span>
-                </button>
-              </div>
-            )}
+                }`}
+              >
+                <LinkIcon className="w-3.5 h-3.5" />
+                <span>Public Music Link (Suno / YouTube / Spotify)</span>
+              </button>
+            </div>
 
-            {engineMode === 'local' || engineMode === 'browser' || inputMode === 'file' ? (
+            {inputMode === 'file' ? (
               /* Drag & Drop File Upload Area */
               <div>
                 <label className="border-2 border-dashed border-plum-600/30 dark:border-champagne-400/20 hover:border-champagne-400/50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer bg-cream-50/40 dark:bg-charcoal-950/40 hover:bg-cream-100/50 dark:hover:bg-charcoal-850/50 transition-all group">
@@ -1358,10 +977,8 @@ export default function StemsPage() {
                   </span>
                   <span className="text-xs text-muted mt-1">
                     {selectedFile
-                      ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for separation`
-                      : engineMode === 'browser'
-                        ? 'Supports MP3, WAV, FLAC, OGG (100% In-Browser • Zero Backend)'
-                        : 'Supports MP3, WAV, FLAC, OGG (Processed locally without limits)'}
+                      ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to prepare`
+                      : 'Supports MP3, WAV, FLAC, OGG (auto-optimized for serverless transfer)'}
                   </span>
                 </label>
               </div>
@@ -1389,40 +1006,24 @@ export default function StemsPage() {
               </div>
             )}
 
-            {/* Ingest Action Button (Only needed in cloud mode) */}
-            {engineMode === 'cloud' ? (
-              <button
-                onClick={handleIngestAudio}
-                disabled={pipelineStage === 'uploading' || pipelineStage === 'ingesting'}
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-plum-600 via-plum-700 to-champagne-600 hover:from-plum-500 hover:to-champagne-500 text-white font-extrabold text-xs shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
-              >
-                {pipelineStage === 'uploading' || pipelineStage === 'ingesting' ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{statusDetails || 'Ingesting Track...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4 text-champagne-300" />
-                    <span>{audioId ? 'Re-upload / Re-import Track' : 'Upload & Prepare Audio Asset'}</span>
-                  </>
-                )}
-              </button>
-            ) : engineMode === 'browser' ? (
-              <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-cyan-700 dark:text-cyan-300 text-xs flex items-center gap-2">
-                <Sparkles className="w-4 h-4 shrink-0 text-cyan-500" />
-                <span>
-                  <strong>100% In-Browser DSP Mode:</strong> Audio file is decoded and separated directly in your browser. No server upload, zero backend, works everywhere.
-                </span>
-              </div>
-            ) : (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
-                <span>
-                  <strong>Zero-Upload Local Mode:</strong> Audio file will be sent directly to your local Demucs AI server. No cloud quotas, no serverless limits.
-                </span>
-              </div>
-            )}
+            {/* Ingest Action Button */}
+            <button
+              onClick={handleIngestAudio}
+              disabled={pipelineStage === 'uploading' || pipelineStage === 'ingesting'}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-plum-600 via-plum-700 to-champagne-600 hover:from-plum-500 hover:to-champagne-500 text-white font-extrabold text-xs shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+            >
+              {pipelineStage === 'uploading' || pipelineStage === 'ingesting' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{statusDetails || 'Ingesting Track...'}</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 text-champagne-300" />
+                  <span>{audioId ? 'Re-upload / Re-import Track' : 'Upload & Prepare Audio Asset'}</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* Right Col: Step 2 (Choose Preset & Launch Separation) */}
@@ -1434,7 +1035,7 @@ export default function StemsPage() {
                   Separation Preset
                 </span>
                 <span className="text-[10px] font-bold text-champagne-600 dark:text-champagne-300 uppercase tracking-wider">
-                  {engineMode === 'browser' ? 'Web Audio DSP' : engineMode === 'local' ? 'Demucs v4 HT' : 'RoFormer v2'}
+                  RoFormer v2
                 </span>
               </div>
 
@@ -1443,10 +1044,11 @@ export default function StemsPage() {
                   <div
                     key={preset.id}
                     onClick={() => setSelectedPreset(preset.id)}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${selectedPreset === preset.id
-                      ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
-                      : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
-                      }`}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      selectedPreset === preset.id
+                        ? 'bg-plum-600/15 border-champagne-400/40 shadow-sm'
+                        : 'bg-white/40 dark:bg-charcoal-950/40 border-plum-700/15 dark:border-white/5 hover:border-champagne-400/20'
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-xs text-charcoal-900 dark:text-white">
@@ -1465,33 +1067,11 @@ export default function StemsPage() {
             {/* Launch Stem Separation Button */}
             <button
               onClick={handleStartStemSeparation}
-              disabled={
-                engineMode === 'browser'
-                  ? !selectedFile || pipelineStage === 'processing'
-                  : engineMode === 'local'
-                  ? !selectedFile ||
-                    pipelineStage === 'uploading' ||
-                    pipelineStage === 'processing' ||
-                    (localServerStatus?.configured === false && localServerStatus?.isProduction)
-                  : !audioId || pipelineStage === 'queue' || pipelineStage === 'processing'
-              }
-              className={`w-full py-3.5 rounded-2xl font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4 ${engineMode === 'browser'
-                ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-charcoal-950'
-                : engineMode === 'local'
-                ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950'
-                : 'bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950'
-                }`}
+              disabled={!audioId || pipelineStage === 'queue' || pipelineStage === 'processing'}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950 font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4"
             >
               <Zap className="w-4 h-4 fill-charcoal-950" />
-              <span>
-                {engineMode === 'browser'
-                  ? 'Separate Stems (In-Browser DSP)'
-                  : engineMode === 'local'
-                  ? localServerStatus?.configured === false && localServerStatus?.isProduction
-                    ? 'Hosted Backend Required (Vercel)'
-                    : 'Separate Stems (Demucs AI)'
-                  : 'Separate Stems (Cloud GPU)'}
-              </span>
+              <span>Separate Stems</span>
             </button>
           </div>
         </div>
@@ -1557,20 +1137,22 @@ export default function StemsPage() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleToggleSolo(stem.id)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${stem.solo
-                        ? 'bg-amber-400 text-charcoal-950 border-amber-500 font-extrabold'
-                        : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
-                        }`}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        stem.solo
+                          ? 'bg-amber-400 text-charcoal-950 border-amber-500 font-extrabold'
+                          : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
+                      }`}
                     >
                       SOLO
                     </button>
 
                     <button
                       onClick={() => handleToggleMute(stem.id)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${stem.muted
-                        ? 'bg-rose-500 text-white border-rose-600 font-extrabold'
-                        : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
-                        }`}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                        stem.muted
+                          ? 'bg-rose-500 text-white border-rose-600 font-extrabold'
+                          : 'bg-cream-100 dark:bg-charcoal-800 text-muted border-transparent hover:text-charcoal-900 dark:hover:text-white'
+                      }`}
                     >
                       MUTE
                     </button>
