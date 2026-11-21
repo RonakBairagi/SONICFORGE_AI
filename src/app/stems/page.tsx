@@ -34,6 +34,7 @@ import {
   checkGradioSpaceHealth,
   separateWithGradioSpace,
 } from '@/lib/gradio-stem-adapter';
+import { separateAudioInBrowser } from '@/lib/browser-dsp-separator';
 
 interface StemArtifact {
   id: string;
@@ -82,8 +83,8 @@ export default function StemsPage() {
   const [publicUrl, setPublicUrl] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<string>('4_tracks');
 
-  // Engine Mode: 'cloud' (Neural Analog) | 'local' (Demucs AI)
-  const [engineMode, setEngineMode] = useState<'cloud' | 'local'>('cloud');
+  // Engine Mode: 'cloud' (Neural Analog) | 'local' (Demucs AI) | 'browser' (Client-side DSP)
+  const [engineMode, setEngineMode] = useState<'cloud' | 'local' | 'browser'>('local');
   const [localServerStatus, setLocalServerStatus] = useState<{
     online: boolean;
     configured?: boolean;
@@ -358,11 +359,69 @@ export default function StemsPage() {
     }
   };
 
-  // Stage 2: Trigger Stem Separation (Cloud or Local)
+  // In-Browser Client-Side Separation Handler (Zero Backend Required)
+  const handleStartBrowserSeparation = async () => {
+    if (!selectedFile) {
+      warning('No audio file', 'Please select or drop an audio file first.');
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setPipelineStage('processing');
+    setElapsedSeconds(0);
+    setStatusDetails('Decoding audio stream in browser...');
+    setErrorMessage(null);
+    setQuotaExceededInfo(null);
+
+    try {
+      const res = await separateAudioInBrowser(selectedFile, (msg) => {
+        setStatusDetails(msg);
+      });
+
+      setCreationId(res.jobId);
+      setTrackTitle(selectedFile.name);
+      setPipelineStage('completed');
+      setStatusDetails('Separation complete! Lossless stems ready.');
+
+      const browserStems: StemArtifact[] = [
+        {
+          id: `${res.jobId}_vocals`,
+          name: 'Lead Vocals',
+          downloadUrl: res.vocalsUrl,
+          volume: 1.0,
+          muted: false,
+          solo: false,
+        },
+        {
+          id: `${res.jobId}_instrumental`,
+          name: 'Instrumental Backing',
+          downloadUrl: res.instrumentalUrl,
+          volume: 1.0,
+          muted: false,
+          solo: false,
+        },
+      ];
+
+      setStems(browserStems);
+      success('Stems Ready!', 'In-browser DSP finished separating vocals and backing track.');
+    } catch (err: unknown) {
+      setPipelineStage('failed');
+      const msg = err instanceof Error ? err.message : 'In-browser separation failed';
+      setErrorMessage(msg);
+      error('Browser DSP Error', msg);
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  };
+
+  // Stage 2: Trigger Stem Separation (Cloud, Local, or Browser)
   const handleStartStemSeparation = async () => {
     if (isSubmittingRef.current) return;
 
-    // Route to Free Local Demucs Engine if local mode is active
+    if (engineMode === 'browser') {
+      return handleStartBrowserSeparation();
+    }
+
     if (engineMode === 'local') {
       return handleStartLocalSeparation();
     }
@@ -989,42 +1048,64 @@ export default function StemsPage() {
         </div>
 
         {/* Engine Mode Switcher */}
-        <div className="glass-panel rounded-2xl p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 p-1 bg-cream-100/70 dark:bg-charcoal-800/70 rounded-xl border border-plum-700/15 dark:border-white/5 flex-1 max-w-md">
+        <div className="glass-panel rounded-2xl p-2.5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 p-1 bg-cream-100/70 dark:bg-charcoal-800/70 rounded-xl border border-plum-700/15 dark:border-white/5 flex-1 max-w-xl">
+            <button
+              onClick={() => {
+                setEngineMode('local');
+                setErrorMessage(null);
+              }}
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${engineMode === 'local'
+                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-emerald-500/40'
+                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                }`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Demucs AI (4 Stems)</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-extrabold hidden sm:inline">
+                STUDIO
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setEngineMode('browser');
+                setSelectedPreset('2_tracks');
+                setErrorMessage(null);
+              }}
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${engineMode === 'browser'
+                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-cyan-500/40'
+                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
+                }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
+              <span>In-Browser DSP (2 Stems)</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-extrabold hidden sm:inline">
+                ZERO BACKEND
+              </span>
+            </button>
             <button
               onClick={() => {
                 setEngineMode('cloud');
                 setErrorMessage(null);
                 setQuotaExceededInfo(null);
               }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${engineMode === 'cloud'
+              className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${engineMode === 'cloud'
                 ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-champagne-400/30'
                 : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
                 }`}
             >
               <Radio className="w-3.5 h-3.5 text-champagne-500" />
-              <span>Neural Analog Cloud</span>
-            </button>
-            <button
-              onClick={() => {
-                setEngineMode('local');
-                setErrorMessage(null);
-              }}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all ${engineMode === 'local'
-                ? 'bg-white dark:bg-charcoal-900 text-charcoal-900 dark:text-white shadow-sm border border-emerald-500/40'
-                : 'text-muted hover:text-charcoal-900 dark:hover:text-white'
-                }`}
-            >
-              <Cpu className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Free Local Engine</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-extrabold">
-                100% FREE
-              </span>
+              <span>Cloud API</span>
             </button>
           </div>
 
           <div className="flex items-center gap-3 px-2">
-            {engineMode === 'local' ? (
+            {engineMode === 'browser' ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-600 dark:text-cyan-400">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
+                In-Browser DSP Active (100% Client-Side • Zero Setup)
+              </span>
+            ) : engineMode === 'local' ? (
               localServerStatus?.online ? (
                 <span className="inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1072,24 +1153,35 @@ export default function StemsPage() {
 
         {/* Hosted Demucs Backend Not Configured Notice (Vercel) */}
         {engineMode === 'local' && localServerStatus?.configured === false && localServerStatus?.isProduction && (
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-600/10 to-amber-500/10 border border-amber-500/30 space-y-2">
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-600/10 to-amber-500/10 border border-amber-500/30 space-y-3">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
                 <AlertCircle className="w-5 h-5" />
               </div>
               <div className="flex-1 space-y-1">
                 <h3 className="font-extrabold text-sm text-charcoal-900 dark:text-white">
-                  Hosted Demucs Backend Not Configured on Vercel
+                  Demucs Backend Not Connected on Vercel
                 </h3>
                 <p className="text-xs text-muted">
-                  Your SonicForge AI frontend is currently deployed on Vercel. Deployed cloud websites cannot connect to your local PC&apos;s <code>127.0.0.1:8765</code> loopback.
+                  Your SonicForge AI frontend is deployed on Vercel. Deployed cloud websites cannot reach your laptop&apos;s <code>127.0.0.1:8765</code> directly.
                 </p>
-                <p className="text-xs text-charcoal-800 dark:text-lavender-200 pt-1">
-                  <strong>To enable Demucs separation on this live website:</strong> Deploy the backend to a hosted cloud provider (e.g. Hugging Face Spaces, Render, or RunPod) and configure <code>NEXT_PUBLIC_STEM_API_URL</code> in your Vercel Project Environment Variables.
-                </p>
-                <p className="text-[11px] text-muted pt-1">
-                  💡 In local development (<code>http://localhost:3000</code>), your local Python Demucs server works automatically.
-                </p>
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setEngineMode('browser');
+                      setSelectedPreset('2_tracks');
+                      setErrorMessage(null);
+                      info('Switched to In-Browser DSP', 'Separating directly in your browser without backend servers.');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-charcoal-950 font-extrabold text-xs shadow-md flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Use In-Browser Separator (Zero Setup) →</span>
+                  </button>
+                  <span className="text-xs text-muted">
+                    Or run SonicForge AI locally with <code>npm run dev</code> for full 4-stem Demucs AI.
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1201,7 +1293,13 @@ export default function StemsPage() {
                 <span className="w-5 h-5 rounded-full bg-champagne-400/20 text-champagne-600 dark:text-champagne-400 text-xs flex items-center justify-center font-bold">1</span>
                 Import Audio Source
               </h2>
-              {engineMode === 'local' ? (
+              {engineMode === 'browser' ? (
+                selectedFile && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> File Ready (In-Browser DSP)
+                  </span>
+                )
+              ) : engineMode === 'local' ? (
                 selectedFile && (
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="w-3.5 h-3.5" /> File Ready (Local Demucs)
@@ -1242,7 +1340,7 @@ export default function StemsPage() {
               </div>
             )}
 
-            {engineMode === 'local' || inputMode === 'file' ? (
+            {engineMode === 'local' || engineMode === 'browser' || inputMode === 'file' ? (
               /* Drag & Drop File Upload Area */
               <div>
                 <label className="border-2 border-dashed border-plum-600/30 dark:border-champagne-400/20 hover:border-champagne-400/50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer bg-cream-50/40 dark:bg-charcoal-950/40 hover:bg-cream-100/50 dark:hover:bg-charcoal-850/50 transition-all group">
@@ -1261,7 +1359,9 @@ export default function StemsPage() {
                   <span className="text-xs text-muted mt-1">
                     {selectedFile
                       ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for separation`
-                      : 'Supports MP3, WAV, FLAC, OGG (Processed locally without limits)'}
+                      : engineMode === 'browser'
+                        ? 'Supports MP3, WAV, FLAC, OGG (100% In-Browser • Zero Backend)'
+                        : 'Supports MP3, WAV, FLAC, OGG (Processed locally without limits)'}
                   </span>
                 </label>
               </div>
@@ -1308,6 +1408,13 @@ export default function StemsPage() {
                   </>
                 )}
               </button>
+            ) : engineMode === 'browser' ? (
+              <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-cyan-700 dark:text-cyan-300 text-xs flex items-center gap-2">
+                <Sparkles className="w-4 h-4 shrink-0 text-cyan-500" />
+                <span>
+                  <strong>100% In-Browser DSP Mode:</strong> Audio file is decoded and separated directly in your browser. No server upload, zero backend, works everywhere.
+                </span>
+              </div>
             ) : (
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
@@ -1327,7 +1434,7 @@ export default function StemsPage() {
                   Separation Preset
                 </span>
                 <span className="text-[10px] font-bold text-champagne-600 dark:text-champagne-300 uppercase tracking-wider">
-                  {engineMode === 'local' ? 'Demucs v4 HT' : 'RoFormer v2'}
+                  {engineMode === 'browser' ? 'Web Audio DSP' : engineMode === 'local' ? 'Demucs v4 HT' : 'RoFormer v2'}
                 </span>
               </div>
 
@@ -1359,21 +1466,27 @@ export default function StemsPage() {
             <button
               onClick={handleStartStemSeparation}
               disabled={
-                engineMode === 'local'
+                engineMode === 'browser'
+                  ? !selectedFile || pipelineStage === 'processing'
+                  : engineMode === 'local'
                   ? !selectedFile ||
                     pipelineStage === 'uploading' ||
                     pipelineStage === 'processing' ||
                     (localServerStatus?.configured === false && localServerStatus?.isProduction)
                   : !audioId || pipelineStage === 'queue' || pipelineStage === 'processing'
               }
-              className={`w-full py-3.5 rounded-2xl font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4 ${engineMode === 'local'
+              className={`w-full py-3.5 rounded-2xl font-extrabold text-sm shadow-xl flex items-center justify-center gap-2 disabled:opacity-40 transition-all cursor-pointer mt-4 ${engineMode === 'browser'
+                ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-charcoal-950'
+                : engineMode === 'local'
                 ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-charcoal-950'
                 : 'bg-gradient-to-r from-champagne-500 to-champagne-600 hover:from-champagne-400 hover:to-champagne-500 text-charcoal-950'
                 }`}
             >
               <Zap className="w-4 h-4 fill-charcoal-950" />
               <span>
-                {engineMode === 'local'
+                {engineMode === 'browser'
+                  ? 'Separate Stems (In-Browser DSP)'
+                  : engineMode === 'local'
                   ? localServerStatus?.configured === false && localServerStatus?.isProduction
                     ? 'Hosted Backend Required (Vercel)'
                     : 'Separate Stems (Demucs AI)'
